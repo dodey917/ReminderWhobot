@@ -2,15 +2,42 @@ import telebot
 from telebot import types
 import threading
 import time
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
 # Replace with your actual Telegram Bot Token
 TOKEN = '8271927017:AAEyjfOynu3rTjBRghZuIilRIackWbbPfpU'
 bot = telebot.TeleBot(TOKEN)
 
+# Google Docs configuration
+GOOGLE_DOC_ID = '1wodxtiMwKBadOd8DoZpFccyqbMWRRCB8GgUEL-dFJHY'
+SERVICE_ACCOUNT_FILE = 'service_account.json'  # Path to your Google Service Account JSON file
+
 # Dictionary to store user reminder status and intervals
 user_data = {}
 
-REMINDER_MESSAGE = "Buy now before presale end, whale 🐳 are coming, fill your bag now"
+def get_google_doc_content():
+    """Fetches content from the Google Doc"""
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE,
+            scopes=['https://www.googleapis.com/auth/documents.readonly']
+        )
+        
+        service = build('docs', 'v1', credentials=credentials)
+        doc = service.documents().get(documentId=GOOGLE_DOC_ID).execute()
+        
+        content = []
+        for elem in doc.get('body', {}).get('content', []):
+            if 'paragraph' in elem:
+                for text_run in elem['paragraph'].get('elements', []):
+                    if 'textRun' in text_run:
+                        content.append(text_run['textRun']['content'])
+        
+        return ''.join(content).strip() or "Buy now before presale end, whale 🐳 are coming, fill your bag now"
+    except Exception as e:
+        print(f"Error fetching Google Doc: {e}")
+        return "Buy now before presale end, whale 🐳 are coming, fill your bag now"
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -20,15 +47,19 @@ def send_welcome(message):
     btn_10min = types.KeyboardButton('10 min reminders')
     btn_30min = types.KeyboardButton('30 min reminders')
     btn_1hr = types.KeyboardButton('1 hour reminders')
-    markup.add(btn_start, btn_stop, btn_10min, btn_30min, btn_1hr)
+    btn_refresh = types.KeyboardButton('Refresh Message')
+    markup.add(btn_start, btn_stop, btn_10min, btn_30min, btn_1hr, btn_refresh)
+    
+    current_message = get_google_doc_content()
     
     bot.send_message(
         message.chat.id,
         "Welcome to the Crypto Reminder Bot!\n\n"
         "Use the buttons to control your reminders:\n"
         "- Start/Stop to control reminders\n"
-        "- Choose your reminder interval\n\n"
-        f"Current message: {REMINDER_MESSAGE}",
+        "- Choose your reminder interval\n"
+        "- Refresh to update message from Google Doc\n\n"
+        f"Current message: {current_message}",
         reply_markup=markup
     )
     
@@ -37,8 +68,11 @@ def send_welcome(message):
         user_data[message.chat.id] = {
             'active': False,
             'interval': 1800,  # default 30 min
-            'timer': None
+            'timer': None,
+            'message': current_message
         }
+    else:
+        user_data[message.chat.id]['message'] = current_message
 
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
@@ -48,7 +82,8 @@ def handle_all_messages(message):
         user_data[chat_id] = {
             'active': False,
             'interval': 1800,  # default 30 min
-            'timer': None
+            'timer': None,
+            'message': get_google_doc_content()
         }
     
     if message.text == 'Start Reminders':
@@ -91,11 +126,16 @@ def handle_all_messages(message):
             if user_data[chat_id]['timer']:
                 user_data[chat_id]['timer'].cancel()
             start_reminders(chat_id)
+    
+    elif message.text == 'Refresh Message':
+        new_message = get_google_doc_content()
+        user_data[chat_id]['message'] = new_message
+        bot.send_message(chat_id, f"Message updated from Google Doc:\n\n{new_message}")
 
 def start_reminders(chat_id):
     if user_data[chat_id]['active']:
         # Send first reminder immediately
-        bot.send_message(chat_id, REMINDER_MESSAGE)
+        bot.send_message(chat_id, user_data[chat_id]['message'])
         
         # Set up the recurring reminder
         user_data[chat_id]['timer'] = threading.Timer(
@@ -107,7 +147,7 @@ def start_reminders(chat_id):
 
 def send_reminder(chat_id):
     if chat_id in user_data and user_data[chat_id]['active']:
-        bot.send_message(chat_id, REMINDER_MESSAGE)
+        bot.send_message(chat_id, user_data[chat_id]['message'])
         
         # Schedule the next reminder
         user_data[chat_id]['timer'] = threading.Timer(
