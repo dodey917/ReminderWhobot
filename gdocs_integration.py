@@ -3,6 +3,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import logging
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,6 @@ class GoogleDocsReader:
                 return None
                 
             # Simple implementation: look for lines that start with the user's query
-            # In a real implementation, you might want to use more sophisticated NLP
             lines = content.split('\n')
             user_query_lower = user_query.lower()
             
