@@ -6,12 +6,21 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import re
 import random
+import logging
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Configuration
 TOKEN = '8271927017:AAEyjfOynu3rTjBRghZuIilRIackWbbPfpU'
 GOOGLE_DOC_ID = '1wodxtiMwKBadOd8DoZpFccyqbMWRRCB8GgUEL-dFJHY'
 SERVICE_ACCOUNT_FILE = 'telegrambotoauth-9663d74b6c50.json'
 
+# Initialize bot
 bot = telebot.TeleBot(TOKEN)
 user_data = {}
 
@@ -32,6 +41,7 @@ class GoogleDocParser:
         current_time = time.time()
         if current_time - self.last_updated > self.refresh_interval:
             try:
+                logger.info("Fetching content from Google Docs...")
                 credentials = service_account.Credentials.from_service_account_file(
                     SERVICE_ACCOUNT_FILE,
                     scopes=['https://www.googleapis.com/auth/documents.readonly']
@@ -69,13 +79,14 @@ class GoogleDocParser:
                 
                 self.doc_content = ''.join(content).strip()
                 self.last_updated = current_time
+                logger.info("Successfully fetched content from Google Docs")
                 
                 # If no sections were found, create default ones
                 if not self.sections:
                     self._create_default_sections()
                     
             except Exception as e:
-                print(f"Error fetching Google Doc: {e}")
+                logger.error(f"Error fetching Google Doc: {e}")
                 if not self.doc_content:
                     self.doc_content = "Buy now before presale end, whale 🐳 are coming, fill your bag now"
                     self._create_default_sections()
@@ -150,19 +161,15 @@ class GoogleDocParser:
         mini_app_match = re.search(r'(Mini-App|Telegram Game|Earn While You Play)(.+?)(?=\n\d\.|\Z)', content, re.DOTALL|re.IGNORECASE)
         if mini_app_match:
             return self._format_answer("Mini-App Information", mini_app_match.group(2).strip())
-        return "The iFart Mini-App is a Telegram-based game where you can earn $iFART tokens through various activities like spinning wheels, completing social tasks, quizzes, and catching falling 'farts' in real-time events."
+        return "The iFart Mini-App is a Telegram-based game where you can earn $iFART tokens through various activities."
     
     def _get_buying_info(self):
         """Get information about buying iFart"""
-        return ("You can buy $iFART tokens through our official DEX once it launches. "
-                "Check the roadmap for updates on exchange listings. "
-                "Always ensure you're using official links to avoid scams.")
+        return "You can buy $iFART tokens through our official DEX once it launches. Check the roadmap for updates."
     
     def _get_team_info(self):
         """Get information about the team"""
-        return ("The iFart team is a group of anonymous developers passionate about "
-                "combining meme culture with sustainable tokenomics. The team allocation "
-                "is 10% of total supply, vested over 3 years to ensure long-term commitment.")
+        return "The iFart team is a group of anonymous developers passionate about combining meme culture with tokenomics."
     
     def _get_supply_info(self):
         """Get information about token supply"""
@@ -175,7 +182,7 @@ class GoogleDocParser:
         """Get information about transaction taxes"""
         tax_match = re.search(r'Transaction Tax\s*(\d+%)', self.doc_content)
         if tax_match:
-            return f"Each transaction has a {tax_match.group(1)} tax, split between token burns and liquidity pool contributions."
+            return f"Each transaction has a {tax_match.group(1)} tax, split between token burns and liquidity pool."
         return "Each transaction has a 3% tax (1.5% burned, 1.5% added to liquidity pool)."
     
     def _get_random_response(self, question):
@@ -204,115 +211,17 @@ class GoogleDocParser:
         return (f"I'm not sure about that specific question, but here's some information "
                 f"about {topic}:\n\n{self.sections.get(topic, 'No information available')}")
 
+# Initialize document parser
 doc_parser = GoogleDocParser()
 
 # Predefined questions for user suggestions
 PRE_DEFINED_QUESTIONS = [
-    "What is iFart?",
-    "Can you explain the tokenomics?",
-    "What's the transaction tax?",
-    "How does the mini-app work?",
-    "What's the total supply?",
-    "Tell me about the roadmap",
-    "What are the current milestones?",
-    "How can I earn iFart tokens?",
-    "Is there a vesting period?",
-    "What's the disclaimer?",
-    "Who created iFart?",
-    "How do I buy iFart?",
-    "What exchanges list iFart?",
-    "Explain the burn mechanism",
-    "What's the liquidity pool?",
-    "How many users does iFart have?",
-    "What's the retention rate?",
-    "Tell me about the team allocation",
-    "What are the community rewards?",
-    "How does the deflationary model work?",
-    "What's the long-term vision?",
-    "Are there any partnerships?",
-    "What makes iFart different?",
-    "How does the spin wheel work?",
-    "What are social tasks?",
-    "Explain the fart rain game",
-    "What's the vesting period for rewards?",
-    "How often are tokens burned?",
-    "What's the LP boost?",
-    "How does iFart prevent pump and dump?",
-    "What's the target market cap?",
-    "How many active users are there?",
-    "What's the Telegram integration?",
-    "Explain the meme token revolution",
-    "What are the holder benefits?",
-    "How does scarcity create value?",
-    "What's the passive growth mechanism?",
-    "Explain the anti-pump/dump features",
-    "What's the mini-app reward system?",
-    "How do daily spins work?",
-    "What are the social tasks rewards?",
-    "Explain the quiz rewards",
-    "How does the real-time event work?",
-    "What's the vesting model?",
-    "How does the 6-month vesting work?",
-    "What's the user acquisition strategy?",
-    "How viral is iFart?",
-    "What's the retention strategy?",
-    "Explain the community-first focus",
-    "What meme contests exist?",
-    "How do leaderboards work?",
-    "What are Squad collaborations?",
-    "What's Phase 1 of the roadmap?",
-    "What happens at 10,000 users?",
-    "What's Phase 2 about?",
-    "What's the mobile expansion plan?",
-    "When does the DEX launch?",
-    "What happens at 50,000 users?",
-    "What's Phase 3 about?",
-    "What top-tier listings are planned?",
-    "How will liquidity be boosted?",
-    "When do auto-payouts start?",
-    "When will public trading begin?",
-    "What's Phase 4 about?",
-    "How often are deflationary burns?",
-    "What's the iFart Swap?",
-    "Explain the staking platform",
-    "What's the total token supply?",
-    "What percentage goes to mini-app rewards?",
-    "How much is in the liquidity pool?",
-    "What are community airdrops?",
-    "How much is allocated to team/dev?",
-    "Why should I hold iFart?",
-    "What's the built-in demand?",
-    "How does deflationary pressure work?",
-    "Explain the viral flywheel",
-    "What's the 1B user goal?",
-    "What are the legal considerations?",
-    "Is iFart regulated?",
-    "What jurisdictions is iFart available in?",
-    "Are there any guarantees?",
-    "How often is the roadmap updated?",
-    "What's the long-term vision?",
-    "How does iFart compare to other meme coins?",
-    "What's the competitive advantage?",
-    "How is the team compensated?",
-    "What's the vesting for team tokens?",
-    "How transparent is the project?",
-    "Where can I check the smart contract?",
-    "Is the LP locked?",
-    "For how long is the LP locked?",
-    "What's the transaction speed?",
-    "Which blockchain is iFart on?",
-    "What are the gas fees?",
-    "How eco-friendly is iFart?",
-    "What's the community size?",
-    "How active is the community?",
-    "Where can I join the community?",
-    "Are there any official social channels?",
-    "How can I contact the team?",
-    "Is there a whitepaper?",
-    "Where can I read more?",
-    "How often is the document updated?",
-    "What's the most recent update?",
-    "How do I get the latest information?"
+    "What is iFart?", "Can you explain the tokenomics?", "What's the transaction tax?",
+    "How does the mini-app work?", "What's the total supply?", "Tell me about the roadmap",
+    "What are the current milestones?", "How can I earn iFart tokens?", "Is there a vesting period?",
+    "What's the disclaimer?", "Who created iFart?", "How do I buy iFart?", "What exchanges list iFart?",
+    "Explain the burn mechanism", "What's the liquidity pool?", "How many users does iFart have?",
+    "What's the retention rate?", "Tell me about the team allocation", "What are the community rewards?"
 ]
 
 @bot.message_handler(commands=['start', 'help'])
@@ -571,5 +480,17 @@ def send_reminder(chat_id):
         user_data[chat_id]['timer'].start()
 
 if __name__ == '__main__':
-    print("Bot is running...")
-    bot.infinity_polling()
+    # Verify Google Docs access
+    try:
+        logger.info("Testing Google Docs access...")
+        doc_parser.get_doc_content()
+        logger.info("Google Docs access successful!")
+    except Exception as e:
+        logger.error(f"Failed to access Google Docs: {e}")
+        exit(1)
+    
+    logger.info("Starting bot...")
+    try:
+        bot.infinity_polling()
+    except Exception as e:
+        logger.error(f"Bot crashed: {e}")
