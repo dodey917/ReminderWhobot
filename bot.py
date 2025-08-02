@@ -2,12 +2,12 @@ import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Updater,
+    Application,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
-    Filters,
-    CallbackContext,
+    filters,
+    ContextTypes,
     JobQueue
 )
 from google.oauth2 import service_account
@@ -65,9 +65,9 @@ suggested_questions = [
 ]
 
 # Reminder message
-REMINDER_MESSAGE = "🚨 iFart Token Alert! 🚨\n\nBuy now before presale ends! Whales 🐳 are coming, fill your bag now!\n\nDon't miss out on this golden opportunity! 💨💨💨"
+REMINDER_MESSAGE = "🚨 iFart Token Alert! �\n\nBuy now before presale ends! Whales 🐳 are coming, fill your bag now!\n\nDon't miss out on this golden opportunity! 💨💨💨"
 
-def start(update: Update, context: CallbackContext) -> None:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send welcome message with inline keyboard."""
     keyboard = [
         [
@@ -87,64 +87,63 @@ def start(update: Update, context: CallbackContext) -> None:
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    update.message.reply_text(
+    await update.message.reply_text(
         "Welcome to iFart Token Mini App! 🚀💨\n\n"
         "Set reminders or get information about iFart Token:",
         reply_markup=reply_markup
     )
 
-def button_handler(update: Update, context: CallbackContext) -> None:
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle button callbacks."""
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     chat_id = query.message.chat_id
     
     if query.data in ['10', '30', '60']:
         # Set one-time reminder
         minutes = int(query.data)
-        context.job_queue.run_once(send_reminder, minutes * 60, context=chat_id)
-        query.edit_message_text(text=f"⏰ Reminder set for {minutes} minutes!")
+        context.job_queue.run_once(send_reminder, minutes * 60, chat_id=chat_id)
+        await query.edit_message_text(text=f"⏰ Reminder set for {minutes} minutes!")
     elif query.data == 'start_reminders':
         # Start repeating reminders
         if 'job' not in context.chat_data:
             context.chat_data['job'] = context.job_queue.run_repeating(
-                send_reminder, interval=3600, first=0, context=chat_id
+                send_reminder, interval=3600, first=0, chat_id=chat_id
             )
-            query.edit_message_text(text="🔔 Hourly reminders started!")
+            await query.edit_message_text(text="🔔 Hourly reminders started!")
         else:
-            query.edit_message_text(text="🔔 Reminders are already running!")
+            await query.edit_message_text(text="🔔 Reminders are already running!")
     elif query.data == 'stop_reminders':
         # Stop reminders
         if 'job' in context.chat_data:
             context.chat_data['job'].schedule_removal()
             del context.chat_data['job']
-            query.edit_message_text(text="🔕 Reminders stopped!")
+            await query.edit_message_text(text="🔕 Reminders stopped!")
         else:
-            query.edit_message_text(text="🔕 No active reminders to stop!")
+            await query.edit_message_text(text="🔕 No active reminders to stop!")
     elif query.data == 'read_doc':
         # Show document summary
         summary = doc_text[:1000] + "..." if len(doc_text) > 1000 else doc_text
-        query.edit_message_text(text=f"📄 Document Summary:\n\n{summary}")
+        await query.edit_message_text(text=f"📄 Document Summary:\n\n{summary}")
     elif query.data == 'suggested_questions':
         # Show suggested questions
         questions = "\n".join([f"• {q}" for q in suggested_questions])
-        query.edit_message_text(text=f"❓ Suggested Questions:\n\n{questions}\n\nYou can ask me any of these!")
+        await query.edit_message_text(text=f"❓ Suggested Questions:\n\n{questions}\n\nYou can ask me any of these!")
 
-def send_reminder(context: CallbackContext) -> None:
+async def send_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send reminder message."""
-    job = context.job
-    context.bot.send_message(job.context, text=REMINDER_MESSAGE)
+    await context.bot.send_message(context.job.chat_id, text=REMINDER_MESSAGE)
 
-def handle_message(update: Update, context: CallbackContext) -> None:
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle text messages and answer questions."""
     user_message = update.message.text.lower()
     answer = find_answer_in_document(user_message)
     
     if answer:
-        update.message.reply_text(answer)
+        await update.message.reply_text(answer)
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             "I couldn't find an answer to that in the document. "
             "Try one of the suggested questions or ask something else!"
         )
@@ -169,39 +168,35 @@ def find_answer_in_document(query: str) -> str:
         return best_paragraph[:1000]  # Limit response length
     return ""
 
-def error_handler(update: Update, context: CallbackContext) -> None:
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log errors and notify user."""
     logger.error(msg="Exception while handling update:", exc_info=context.error)
     if update and update.message:
-        update.message.reply_text("Sorry, something went wrong. Please try again later.")
+        await update.message.reply_text("Sorry, something went wrong. Please try again later.")
 
 def main() -> None:
     """Start the bot."""
-    # Create the Updater
-    updater = Updater(TELEGRAM_TOKEN)
+    # Create the Application
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
     
-    # Get the dispatcher to register handlers
-    dispatcher = updater.dispatcher
-
     # Register command handlers
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("help", lambda u, c: u.message.reply_text(
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", lambda u, c: u.message.reply_text(
         "Use /start to see the main menu. You can set reminders or ask about iFart Token."
     )))
     
     # Register button handler
-    dispatcher.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(CallbackQueryHandler(button_handler))
     
     # Register message handler
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Register error handler
-    dispatcher.add_error_handler(error_handler)
+    application.add_error_handler(error_handler)
 
     # Start the Bot
-    updater.start_polling()
+    application.run_polling()
     logger.info("Bot started and running...")
-    updater.idle()
 
 if __name__ == '__main__':
     main()
