@@ -44,13 +44,11 @@ class DocumentCache:
         try:
             creds = service_account.Credentials.from_service_account_file(
                 SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-            service = build('docs', 'v1', credentials=creds)
-            
             async with self.lock:
+                service = build('docs', 'v1', credentials=creds)
                 document = service.documents().get(documentId=DOCUMENT_ID).execute()
                 doc_elements = document.get('body', {}).get('content', [])
                 
-                # Extract text from document elements
                 new_content = ""
                 for element in doc_elements:
                     if 'paragraph' in element:
@@ -82,68 +80,45 @@ document_cache = DocumentCache()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send welcome message"""
-    keyboard = [
-        [InlineKeyboardButton("Refresh Document", callback_data='refresh')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
     last_updated = await document_cache.get_last_updated()
     last_updated_str = last_updated.strftime("%Y-%m-%d %H:%M:%S") if last_updated else "never"
     
     await update.message.reply_text(
         f"🤖 iFart Token Info Bot\n\n"
         f"Document last updated: {last_updated_str}\n\n"
-        "Ask me anything about iFart Token and I'll find relevant info from our document!",
-        reply_markup=reply_markup
+        "Ask me anything about iFart Token and I'll find relevant info from our document!"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle user questions and find answers in document"""
-    user_message = update.message.text
-    if not user_message:
-        return
-    
+    """Handle user questions"""
     try:
         content = await document_cache.get_content()
         if not content:
             await update.message.reply_text("⚠️ Document content not loaded yet. Please try again later.")
             return
         
-        # Find most relevant paragraph
-        answer = await find_best_answer(user_message, content)
-        if answer:
-            await update.message.reply_text(answer)
-        else:
-            await update.message.reply_text("🤷 I couldn't find relevant information for your question in the document.")
+        answer = await find_best_answer(update.message.text, content)
+        await update.message.reply_text(answer if answer else "🤷 No relevant info found in document.")
             
     except Exception as e:
         logger.error(f"Error handling message: {e}")
-        await update.message.reply_text("⚠️ Sorry, I encountered an error processing your request.")
+        await update.message.reply_text("⚠️ Error processing your request. Please try again.")
 
 async def find_best_answer(query: str, content: str) -> str:
     """Find the most relevant answer in document content"""
     try:
-        # Simple keyword matching - can be enhanced with better NLP
         keywords = re.findall(r'\w+', query.lower())
         paragraphs = [p for p in content.split('\n') if p.strip()]
         
         if not paragraphs:
             return ""
         
-        # Score paragraphs by keyword matches
-        scored = []
-        for para in paragraphs:
-            score = sum(1 for kw in keywords if kw in para.lower())
-            if score > 0:
-                scored.append((score, para))
+        best_match = max(
+            ((sum(1 for kw in keywords if kw in para.lower()), para)
+            for para in paragraphs
+        )[1]
         
-        if not scored:
-            return ""
-        
-        # Return the best matching paragraph (limited to 1000 chars)
-        best_match = max(scored, key=lambda x: x[0])[1]
         return best_match[:1000] + ("..." if len(best_match) > 1000 else "")
-    
     except Exception as e:
         logger.error(f"Error finding answer: {e}")
         return ""
@@ -151,22 +126,19 @@ async def find_best_answer(query: str, content: str) -> str:
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle all Telegram bot errors"""
     logger.error(f"Update {update} caused error: {context.error}")
-    
     if isinstance(update, Update) and update.message:
-        await update.message.reply_text(
-            "⚠️ An error occurred. Our team has been notified. Please try again later."
-        )
+        await update.message.reply_text("⚠️ An error occurred. Please try again later.")
 
 async def scheduled_updates(context: ContextTypes.DEFAULT_TYPE):
-    """Scheduled task to update document content"""
+    """Scheduled document updates"""
     try:
         logger.info("Running scheduled document update...")
         await document_cache.update()
     except Exception as e:
-        logger.error(f"Error in scheduled update: {e}")
+        logger.error(f"Scheduled update error: {e}")
 
-async def initialize():
-    """Initialize the bot and perform first document load"""
+async def initialize(app: Application):
+    """Initialize the bot"""
     try:
         await document_cache.update()
         logger.info("Initial document load complete")
@@ -174,8 +146,7 @@ async def initialize():
         logger.error(f"Initial document load failed: {e}")
 
 def main() -> None:
-    """Start the bot and schedule background tasks"""
-    # Create Application
+    """Start the bot"""
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
     # Register handlers
@@ -184,15 +155,14 @@ def main() -> None:
     application.add_error_handler(error_handler)
     
     # Schedule background tasks
-    job_queue = application.job_queue
-    if job_queue:
-        job_queue.run_repeating(
+    if application.job_queue:
+        application.job_queue.run_repeating(
             scheduled_updates,
             interval=UPDATE_INTERVAL,
-            first=10  # Start 10 seconds after launch
+            first=10
         )
     
-    # Run initialization and start bot
+    # Run the bot
     application.run_polling(
         on_startup=initialize,
         drop_pending_updates=True
