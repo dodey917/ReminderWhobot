@@ -1,496 +1,254 @@
 import telebot
 from telebot import types
-import threading
-import time
+import requests
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import threading
+import time
 import re
-import random
-import logging
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # Configuration
-TOKEN = '8271927017:AAEyjfOynu3rTjBRghZuIilRIackWbbPfpU'
-GOOGLE_DOC_ID = '1wodxtiMwKBadOd8DoZpFccyqbMWRRCB8GgUEL-dFJHY'
-SERVICE_ACCOUNT_FILE = 'telegrambotoauth-9663d74b6c50.json'
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+DOCUMENT_ID = "1wodxtiMwKBadOd8DoZpFccyqbMWRRCB8GgUEL-dFJHY"
+GOOGLE_CREDENTIALS_FILE = "service_account.json"  # You need to create this
 
-# Initialize bot
 bot = telebot.TeleBot(TOKEN)
-user_data = {}
 
-class GoogleDocParser:
-    def __init__(self):
-        self.doc_content = ""
-        self.sections = {}
-        self.last_updated = 0
-        self.refresh_interval = 3600  # 1 hour
-        
-    def refresh_content(self):
-        """Force refresh the document content"""
-        self.last_updated = 0
-        return self.get_doc_content()
-        
-    def get_doc_content(self):
-        """Fetch and cache the Google Doc content"""
-        current_time = time.time()
-        if current_time - self.last_updated > self.refresh_interval:
-            try:
-                logger.info("Fetching content from Google Docs...")
-                credentials = service_account.Credentials.from_service_account_file(
-                    SERVICE_ACCOUNT_FILE,
-                    scopes=['https://www.googleapis.com/auth/documents.readonly']
-                )
-                
-                service = build('docs', 'v1', credentials=credentials)
-                doc = service.documents().get(documentId=GOOGLE_DOC_ID).execute()
-                
-                content = []
-                current_section = None
-                section_content = []
-                
-                for elem in doc.get('body', {}).get('content', []):
-                    if 'paragraph' in elem:
-                        paragraph = elem['paragraph']
-                        # Check if this is a section heading
-                        if 'headingId' in paragraph.get('paragraphStyle', {}):
-                            if current_section:
-                                self.sections[current_section] = '\n'.join(section_content)
-                            current_section = ''.join(
-                                e['textRun']['content'] for e in paragraph['elements'] 
-                                if 'textRun' in e
-                            ).strip()
-                            section_content = []
-                        else:
-                            for text_run in paragraph.get('elements', []):
-                                if 'textRun' in text_run:
-                                    text = text_run['textRun']['content']
-                                    content.append(text)
-                                    if current_section:
-                                        section_content.append(text)
-                
-                if current_section:
-                    self.sections[current_section] = '\n'.join(section_content)
-                
-                self.doc_content = ''.join(content).strip()
-                self.last_updated = current_time
-                logger.info("Successfully fetched content from Google Docs")
-                
-                # If no sections were found, create default ones
-                if not self.sections:
-                    self._create_default_sections()
-                    
-            except Exception as e:
-                logger.error(f"Error fetching Google Doc: {e}")
-                if not self.doc_content:
-                    self.doc_content = "Buy now before presale end, whale 🐳 are coming, fill your bag now"
-                    self._create_default_sections()
-        
-        return self.doc_content
+# Dictionary to store document content and user sessions
+document_content = ""
+suggested_questions = []
+user_sessions = {}
+
+class UserSession:
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self.last_questions = []
+        self.reminder_active = False
+        self.reminder_interval = 30  # minutes
+
+def fetch_document_content():
+    """Fetch content from Google Docs"""
+    global document_content, suggested_questions
     
-    def _create_default_sections(self):
-        """Create default sections if none found"""
-        self.sections = {
-            "Disclaimer": re.search(r'DISCLAIMER(.+?)(?=\n\d\.|\Z)', self.doc_content, re.DOTALL).group(1).strip() 
-                        if re.search(r'DISCLAIMER(.+?)(?=\n\d\.|\Z)', self.doc_content, re.DOTALL) 
-                        else "No disclaimer found",
-            "Brief Intro": re.search(r'1\. Brief Intro(.+?)(?=\n\d\.|\Z)', self.doc_content, re.DOTALL).group(1).strip() 
-                          if re.search(r'1\. Brief Intro(.+?)(?=\n\d\.|\Z)', self.doc_content, re.DOTALL) 
-                          else "No introduction found",
-            "Tokenomics": re.search(r'(Tokenomics|Economic.+\n)(.+?)(?=\n\d\.|\Z)', self.doc_content, re.DOTALL|re.IGNORECASE).group(2).strip() 
-                        if re.search(r'(Tokenomics|Economic.+\n)(.+?)(?=\n\d\.|\Z)', self.doc_content, re.DOTALL|re.IGNORECASE) 
-                        else "No tokenomics found",
-            "Roadmap": re.search(r'(Roadmap|Future Plans.+\n)(.+?)(?=\n\d\.|\Z)', self.doc_content, re.DOTALL|re.IGNORECASE).group(2).strip() 
-                     if re.search(r'(Roadmap|Future Plans.+\n)(.+?)(?=\n\d\.|\Z)', self.doc_content, re.DOTALL|re.IGNORECASE) 
-                     else "No roadmap found"
-        }
-    
-    def find_answer(self, question):
-        """Search for answers in the document based on the question"""
-        content = self.get_doc_content()
-        question_lower = question.lower()
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            GOOGLE_CREDENTIALS_FILE,
+            scopes=['https://www.googleapis.com/auth/documents.readonly']
+        )
         
-        # Check for specific questions
-        if any(q in question_lower for q in ['what is ifart', 'about ifart', 'tell me about ifart']):
-            return self._format_answer("Brief Intro", self.sections.get("Brief Intro", "No information available about iFart."))
+        service = build('docs', 'v1', credentials=credentials)
+        doc = service.documents().get(documentId=DOCUMENT_ID).execute()
         
-        elif any(q in question_lower for q in ['tokenomics', 'economic', 'token model', 'supply']):
-            return self._format_answer("Tokenomics", self.sections.get("Tokenomics", "No tokenomics information available."))
+        # Extract text content
+        content = []
+        for elem in doc.get('body', {}).get('content', []):
+            if 'paragraph' in elem:
+                for para_elem in elem['paragraph']['elements']:
+                    if 'textRun' in para_elem:
+                        content.append(para_elem['textRun']['content'])
         
-        elif any(q in question_lower for q in ['disclaimer', 'risk', 'legal']):
-            return self._format_answer("Disclaimer", self.sections.get("Disclaimer", "No disclaimer information available."))
+        document_content = " ".join(content)
         
-        elif any(q in question_lower for q in ['roadmap', 'plan', 'future', 'milestone']):
-            return self._format_answer("Roadmap", self.sections.get("Roadmap", "No roadmap information available."))
-        
-        elif any(q in question_lower for q in ['mini-app', 'mini app', 'telegram game']):
-            return self._get_mini_app_info()
-        
-        elif any(q in question_lower for q in ['how to buy', 'where to buy', 'get ifart']):
-            return self._get_buying_info()
-        
-        elif any(q in question_lower for q in ['team', 'developer', 'who created']):
-            return self._get_team_info()
-        
-        elif any(q in question_lower for q in ['supply', 'total supply', 'circulating']):
-            return self._get_supply_info()
-        
-        elif any(q in question_lower for q in ['tax', 'fee', 'transaction cost']):
-            return self._get_tax_info()
-        
-        # If no specific match, try to find relevant sections
-        for section, section_content in self.sections.items():
-            if question_lower in section.lower():
-                return self._format_answer(section, section_content)
-        
-        # Default response
-        return self._get_random_response(question)
-    
-    def _format_answer(self, title, content):
-        """Format the answer with a title and content"""
-        return f"**{title}**\n\n{content[:2000]}{'...' if len(content) > 2000 else ''}"
-    
-    def _get_mini_app_info(self):
-        """Get information about the mini-app"""
-        content = self.get_doc_content()
-        mini_app_match = re.search(r'(Mini-App|Telegram Game|Earn While You Play)(.+?)(?=\n\d\.|\Z)', content, re.DOTALL|re.IGNORECASE)
-        if mini_app_match:
-            return self._format_answer("Mini-App Information", mini_app_match.group(2).strip())
-        return "The iFart Mini-App is a Telegram-based game where you can earn $iFART tokens through various activities."
-    
-    def _get_buying_info(self):
-        """Get information about buying iFart"""
-        return "You can buy $iFART tokens through our official DEX once it launches. Check the roadmap for updates."
-    
-    def _get_team_info(self):
-        """Get information about the team"""
-        return "The iFart team is a group of anonymous developers passionate about combining meme culture with tokenomics."
-    
-    def _get_supply_info(self):
-        """Get information about token supply"""
-        supply_match = re.search(r'Total Supply\s*([\d,]+)\s*\$iFART', self.doc_content)
-        if supply_match:
-            return f"The total supply of $iFART is {supply_match.group(1)} tokens."
-        return "The total supply of $iFART is 1,000,000,000 tokens with a deflationary burn mechanism."
-    
-    def _get_tax_info(self):
-        """Get information about transaction taxes"""
-        tax_match = re.search(r'Transaction Tax\s*(\d+%)', self.doc_content)
-        if tax_match:
-            return f"Each transaction has a {tax_match.group(1)} tax, split between token burns and liquidity pool."
-        return "Each transaction has a 3% tax (1.5% burned, 1.5% added to liquidity pool)."
-    
-    def _get_random_response(self, question):
-        """Generate a random response for unrecognized questions"""
-        responses = [
-            "I found this information that might help:",
-            "Here's what I know about that:",
-            "Based on the whitepaper:",
-            "The document mentions:",
-            "Relevant information:"
+        # Generate suggested questions (you can customize these)
+        suggested_questions = [
+            "What is iFart Token?",
+            "How does iFart Token work?",
+            "What are the benefits of iFart Token?",
+            "How can I buy iFart Token?",
+            "What makes iFart Token unique?",
+            "Tell me about the iFart Token team",
+            "What's the tokenomics of iFart?",
+            "Where can I trade iFart Token?"
         ]
         
-        # Try to find any matching content
-        content = self.get_doc_content()
-        sentences = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', content)
-        relevant_sentences = [s for s in sentences if any(word.lower() in s.lower() for word in question.split())]
-        
-        if relevant_sentences:
-            return f"{random.choice(responses)}\n\n{'. '.join(relevant_sentences[:3])}"
-        
-        # Fallback to general info
-        general_topics = [
-            "Brief Intro", "Tokenomics", "Roadmap", "Mini-App Features"
-        ]
-        topic = random.choice(general_topics)
-        return (f"I'm not sure about that specific question, but here's some information "
-                f"about {topic}:\n\n{self.sections.get(topic, 'No information available')}")
+        return True
+    except Exception as e:
+        print(f"Error fetching document: {e}")
+        return False
 
-# Initialize document parser
-doc_parser = GoogleDocParser()
-
-# Predefined questions for user suggestions
-PRE_DEFINED_QUESTIONS = [
-    "What is iFart?", "Can you explain the tokenomics?", "What's the transaction tax?",
-    "How does the mini-app work?", "What's the total supply?", "Tell me about the roadmap",
-    "What are the current milestones?", "How can I earn iFart tokens?", "Is there a vesting period?",
-    "What's the disclaimer?", "Who created iFart?", "How do I buy iFart?", "What exchanges list iFart?",
-    "Explain the burn mechanism", "What's the liquidity pool?", "How many users does iFart have?",
-    "What's the retention rate?", "Tell me about the team allocation", "What are the community rewards?"
-]
+def search_document(query):
+    """Search the document for relevant information"""
+    if not document_content:
+        return "I couldn't access the document. Please try again later."
+    
+    # Simple keyword-based search (you could enhance this with NLP)
+    query = query.lower()
+    sentences = re.split(r'[.!?]', document_content)
+    
+    relevant_sentences = []
+    for sentence in sentences:
+        if query in sentence.lower():
+            relevant_sentences.append(sentence.strip())
+    
+    if not relevant_sentences:
+        return "I couldn't find specific information about that in the document. Maybe try rephrasing your question?"
+    
+    return "\n\n".join(relevant_sentences[:3])  # Return up to 3 relevant sentences
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    user_id = message.chat.id
+    if user_id not in user_sessions:
+        user_sessions[user_id] = UserSession(user_id)
     
-    # Main control buttons
-    btn_row1 = [
-        types.KeyboardButton('Start Reminders'),
-        types.KeyboardButton('Stop Reminders')
-    ]
-    btn_row2 = [
-        types.KeyboardButton('10 min reminders'),
-        types.KeyboardButton('30 min reminders'),
-        types.KeyboardButton('1 hour reminders')
-    ]
-    btn_row3 = [
-        types.KeyboardButton('Refresh Content'),
-        types.KeyboardButton('Suggested Questions')
-    ]
+    # Try to fetch document content if we haven't already
+    if not document_content:
+        fetch_success = fetch_document_content()
+        if not fetch_success:
+            bot.reply_to(message, "⚠️ I'm having trouble accessing the knowledge base. Please try again later.")
+            return
     
-    for btn in btn_row1:
-        markup.add(btn)
-    for btn in btn_row2:
-        markup.add(btn)
-    for btn in btn_row3:
-        markup.add(btn)
+    # Create custom keyboard
+    markup = types.ReplyKeyboardMarkup(row_width=2)
     
-    current_message = doc_parser.get_doc_content()[:500] + "..." if len(doc_parser.get_doc_content()) > 500 else doc_parser.get_doc_content()
+    # Add suggested questions
+    for question in suggested_questions[:4]:  # Show first 4 as buttons
+        markup.add(types.KeyboardButton(question))
+    
+    # Add reminder controls
+    reminder_btn = types.KeyboardButton('🔔 Set Reminders')
+    search_btn = types.KeyboardButton('🔍 Search Knowledge Base')
+    markup.add(reminder_btn, search_btn)
+    
+    welcome_msg = """
+💨 *Welcome to iFart Token Knowledge Bot!* 💨
+
+I can answer questions about iFart Token using our official documentation.
+
+Try one of the suggested questions or ask your own!
+
+*Reminder feature:* Get periodic updates about iFart Token.
+    """
+    
+    bot.send_message(message.chat.id, welcome_msg, 
+                    reply_markup=markup, parse_mode='Markdown')
+
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    user_id = message.chat.id
+    if user_id not in user_sessions:
+        user_sessions[user_id] = UserSession(user_id)
+    
+    session = user_sessions[user_id]
+    
+    if message.text == '🔔 Set Reminders':
+        handle_reminders(message)
+    elif message.text == '🔍 Search Knowledge Base':
+        bot.reply_to(message, "What would you like to know about iFart Token?")
+    elif message.text in suggested_questions:
+        # Handle suggested questions
+        answer = search_document(message.text)
+        bot.reply_to(message, answer)
+        
+        # Store this question in session
+        session.last_questions.append(message.text)
+    else:
+        # Handle free-form questions
+        answer = search_document(message.text)
+        bot.reply_to(message, answer)
+        
+        # Store this question in session
+        session.last_questions.append(message.text)
+
+def handle_reminders(message):
+    user_id = message.chat.id
+    session = user_sessions[user_id]
+    
+    markup = types.ReplyKeyboardMarkup(row_width=3)
+    btn_10min = types.KeyboardButton('10 min')
+    btn_30min = types.KeyboardButton('30 min')
+    btn_1hr = types.KeyboardButton('1 hour')
+    btn_start = types.KeyboardButton('🚀 Start')
+    btn_stop = types.KeyboardButton('✋ Stop')
+    btn_back = types.KeyboardButton('🔙 Back')
+    
+    if session.reminder_active:
+        status = f"Active ({session.reminder_interval} min intervals)"
+    else:
+        status = "Inactive"
+    
+    markup.add(btn_10min, btn_30min, btn_1hr, btn_start, btn_stop, btn_back)
     
     bot.send_message(
-        message.chat.id,
-        "🚀 Welcome to the Official iFart Information Bot! 🚀\n\n"
-        "I can provide detailed information from the iFart whitepaper and send you regular reminders.\n\n"
-        "🔹 Ask me anything about iFart tokenomics, roadmap, or features\n"
-        "🔹 Use buttons to control reminder settings\n"
-        "🔹 Click 'Refresh Content' to get the latest from the whitepaper\n"
-        "🔹 Try 'Suggested Questions' for quick info\n\n"
-        f"📄 Current document preview:\n{current_message}",
+        user_id,
+        f"🔔 *Reminder Settings*\n\nCurrent status: {status}\n\n"
+        "Select interval or start/stop reminders:",
         reply_markup=markup,
         parse_mode='Markdown'
     )
-    
-    # Initialize user data if not exists
-    if message.chat.id not in user_data:
-        user_data[message.chat.id] = {
-            'active': False,
-            'interval': 1800,  # default 30 min
-            'timer': None
-        }
 
-@bot.message_handler(commands=['refresh'])
-def handle_refresh_command(message):
-    """Handle the /refresh command to update content"""
-    chat_id = message.chat.id
-    doc_parser.refresh_content()
-    bot.send_message(chat_id, "📢 Document content refreshed with the latest version from Google Docs!")
+@bot.message_handler(func=lambda m: m.text in ['10 min', '30 min', '1 hour'])
+def set_reminder_interval(message):
+    user_id = message.chat.id
+    session = user_sessions[user_id]
+    
+    if message.text == '10 min':
+        session.reminder_interval = 10
+    elif message.text == '30 min':
+        session.reminder_interval = 30
+    elif message.text == '1 hour':
+        session.reminder_interval = 60
+    
+    bot.reply_to(message, f"Reminder interval set to {message.text}")
 
-@bot.message_handler(func=lambda message: message.text in [
-    'Start Reminders', 'Stop Reminders', 
-    '10 min reminders', '30 min reminders', 
-    '1 hour reminders', 'Refresh Content',
-    'Suggested Questions'
-])
-def handle_buttons(message):
-    chat_id = message.chat.id
+@bot.message_handler(func=lambda m: m.text == '🚀 Start')
+def start_reminders(message):
+    user_id = message.chat.id
+    session = user_sessions[user_id]
     
-    if chat_id not in user_data:
-        user_data[chat_id] = {
-            'active': False,
-            'interval': 1800,
-            'timer': None
-        }
+    if not session.reminder_active:
+        session.reminder_active = True
+        threading.Thread(target=send_reminders, args=(user_id,)).start()
+        bot.reply_to(message, f"🚀 Reminders started! You'll get updates every {session.reminder_interval} minutes.")
+    else:
+        bot.reply_to(message, "Reminders are already running!")
+
+@bot.message_handler(func=lambda m: m.text == '✋ Stop')
+def stop_reminders(message):
+    user_id = message.chat.id
+    session = user_sessions[user_id]
     
-    if message.text == 'Start Reminders':
-        if not user_data[chat_id]['active']:
-            user_data[chat_id]['active'] = True
-            start_reminders(chat_id)
-            bot.send_message(chat_id, "🔔 Reminders started! You'll now receive regular updates.", parse_mode='Markdown')
-        else:
-            bot.send_message(chat_id, "🔔 Reminders are already running!", parse_mode='Markdown')
+    if session.reminder_active:
+        session.reminder_active = False
+        bot.reply_to(message, "✋ Reminders stopped.")
+    else:
+        bot.reply_to(message, "Reminders aren't currently running.")
+
+@bot.message_handler(func=lambda m: m.text == '🔙 Back')
+def back_to_main(message):
+    send_welcome(message)
+
+def send_reminders(user_id):
+    session = user_sessions[user_id]
     
-    elif message.text == 'Stop Reminders':
-        if user_data[chat_id]['active']:
-            user_data[chat_id]['active'] = False
-            if user_data[chat_id]['timer']:
-                user_data[chat_id]['timer'].cancel()
-            bot.send_message(chat_id, "⏹ Reminders stopped.", parse_mode='Markdown')
-        else:
-            bot.send_message(chat_id, "⏹ Reminders aren't running!", parse_mode='Markdown')
-    
-    elif message.text == '10 min reminders':
-        user_data[chat_id]['interval'] = 600
-        bot.send_message(chat_id, "⏰ Reminder interval set to 10 minutes", parse_mode='Markdown')
-        if user_data[chat_id]['active']:
-            if user_data[chat_id]['timer']:
-                user_data[chat_id]['timer'].cancel()
-            start_reminders(chat_id)
-    
-    elif message.text == '30 min reminders':
-        user_data[chat_id]['interval'] = 1800
-        bot.send_message(chat_id, "⏰ Reminder interval set to 30 minutes", parse_mode='Markdown')
-        if user_data[chat_id]['active']:
-            if user_data[chat_id]['timer']:
-                user_data[chat_id]['timer'].cancel()
-            start_reminders(chat_id)
-    
-    elif message.text == '1 hour reminders':
-        user_data[chat_id]['interval'] = 3600
-        bot.send_message(chat_id, "⏰ Reminder interval set to 1 hour", parse_mode='Markdown')
-        if user_data[chat_id]['active']:
-            if user_data[chat_id]['timer']:
-                user_data[chat_id]['timer'].cancel()
-            start_reminders(chat_id)
-    
-    elif message.text == 'Refresh Content':
-        doc_parser.refresh_content()
-        content_preview = doc_parser.get_doc_content()[:500] + "..." if len(doc_parser.get_doc_content()) > 500 else doc_parser.get_doc_content()
-        bot.send_message(chat_id, f"🔄 Document content refreshed!\n\nPreview:\n{content_preview}", parse_mode='Markdown')
-    
-    elif message.text == 'Suggested Questions':
-        # Send a selection of suggested questions
-        questions_markup = types.InlineKeyboardMarkup()
+    while session.reminder_active:
+        time.sleep(session.reminder_interval * 60)
         
-        # Add buttons in rows of 2
-        for i in range(0, min(10, len(PRE_DEFINED_QUESTIONS)), 2):
-            row = []
-            if i < len(PRE_DEFINED_QUESTIONS):
-                row.append(types.InlineKeyboardButton(
-                    PRE_DEFINED_QUESTIONS[i], 
-                    callback_data=f"question_{i}"
-                ))
-            if i+1 < len(PRE_DEFINED_QUESTIONS):
-                row.append(types.InlineKeyboardButton(
-                    PRE_DEFINED_QUESTIONS[i+1], 
-                    callback_data=f"question_{i+1}"
-                ))
-            if row:
-                questions_markup.add(*row)
-        
-        # Add "More Questions" button if there are more
-        if len(PRE_DEFINED_QUESTIONS) > 10:
-            questions_markup.add(types.InlineKeyboardButton(
-                "More Questions →", 
-                callback_data="more_questions_1"
-            ))
-        
-        bot.send_message(
-            chat_id,
-            "Here are some questions you can ask about iFart:",
-            reply_markup=questions_markup
-        )
+        if session.reminder_active:
+            # Create a dynamic reminder message based on document content
+            reminder_msg = "💨 *iFart Token Reminder* 💨\n\n"
+            
+            # Get a random fact or update from the document
+            facts = re.findall(r'\b[A-Z][^.!?]*[.!?]', document_content)
+            if facts:
+                reminder_msg += "Did you know?\n" + facts[len(facts)//2] + "\n\n"
+            
+            reminder_msg += "Whales are sniffing around 👃\nFill your bags before the wind changes! 🌬️\n\n#iFartToTheMoon 🚀"
+            
+            bot.send_message(user_id, reminder_msg, parse_mode='Markdown')
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('question_'))
-def handle_question_callback(call):
-    """Handle when a user clicks a suggested question"""
-    question_idx = int(call.data.split('_')[1])
-    if 0 <= question_idx < len(PRE_DEFINED_QUESTIONS):
-        question = PRE_DEFINED_QUESTIONS[question_idx]
-        answer = doc_parser.find_answer(question)
-        bot.send_message(call.message.chat.id, f"❓ **Question:** {question}\n\n{answer}", parse_mode='Markdown')
-    bot.answer_callback_query(call.id)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('more_questions_'))
-def handle_more_questions(call):
-    """Handle pagination for suggested questions"""
-    page = int(call.data.split('_')[2])
-    start_idx = page * 10
-    end_idx = min((page + 1) * 10, len(PRE_DEFINED_QUESTIONS))
-    
-    questions_markup = types.InlineKeyboardMarkup()
-    
-    # Add buttons for this page
-    for i in range(start_idx, end_idx, 2):
-        row = []
-        if i < len(PRE_DEFINED_QUESTIONS):
-            row.append(types.InlineKeyboardButton(
-                PRE_DEFINED_QUESTIONS[i], 
-                callback_data=f"question_{i}"
-            ))
-        if i+1 < len(PRE_DEFINED_QUESTIONS):
-            row.append(types.InlineKeyboardButton(
-                PRE_DEFINED_QUESTIONS[i+1], 
-                callback_data=f"question_{i+1}"
-            ))
-        if row:
-            questions_markup.add(*row)
-    
-    # Add navigation buttons
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(types.InlineKeyboardButton(
-            "← Previous", 
-            callback_data=f"more_questions_{page-1}"
-        ))
-    if end_idx < len(PRE_DEFINED_QUESTIONS):
-        nav_buttons.append(types.InlineKeyboardButton(
-            "Next →", 
-            callback_data=f"more_questions_{page+1}"
-        ))
-    if nav_buttons:
-        questions_markup.add(*nav_buttons)
-    
-    bot.edit_message_reply_markup(
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        reply_markup=questions_markup
-    )
-    bot.answer_callback_query(call.id)
-
-@bot.message_handler(func=lambda message: True)
-def handle_questions(message):
-    chat_id = message.chat.id
-    question = message.text
-    
-    # Don't process button commands as questions
-    if message.text in [
-        'Start Reminders', 'Stop Reminders', 
-        '10 min reminders', '30 min reminders', 
-        '1 hour reminders', 'Refresh Content',
-        'Suggested Questions'
-    ]:
-        return
-    
-    # Show typing action while processing
-    bot.send_chat_action(chat_id, 'typing')
-    
-    answer = doc_parser.find_answer(question)
-    bot.send_message(chat_id, answer, parse_mode='Markdown')
-
-def start_reminders(chat_id):
-    if user_data[chat_id]['active']:
-        # Send first reminder immediately
-        reminder_content = doc_parser.get_doc_content()[:2000]  # Truncate if too long
-        bot.send_message(chat_id, f"🔔 Reminder:\n\n{reminder_content}", parse_mode='Markdown')
-        
-        # Set up the recurring reminder
-        user_data[chat_id]['timer'] = threading.Timer(
-            user_data[chat_id]['interval'],
-            send_reminder,
-            args=[chat_id]
-        )
-        user_data[chat_id]['timer'].start()
-
-def send_reminder(chat_id):
-    if chat_id in user_data and user_data[chat_id]['active']:
-        reminder_content = doc_parser.get_doc_content()[:2000]  # Truncate if too long
-        bot.send_message(chat_id, f"🔔 Reminder:\n\n{reminder_content}", parse_mode='Markdown')
-        
-        # Schedule the next reminder
-        user_data[chat_id]['timer'] = threading.Timer(
-            user_data[chat_id]['interval'],
-            send_reminder,
-            args=[chat_id]
-        )
-        user_data[chat_id]['timer'].start()
+def periodic_document_refresh():
+    """Refresh document content periodically"""
+    while True:
+        time.sleep(3600)  # Refresh every hour
+        fetch_document_content()
 
 if __name__ == '__main__':
-    # Verify Google Docs access
-    try:
-        logger.info("Testing Google Docs access...")
-        doc_parser.get_doc_content()
-        logger.info("Google Docs access successful!")
-    except Exception as e:
-        logger.error(f"Failed to access Google Docs: {e}")
-        exit(1)
+    # Initial document fetch
+    fetch_document_content()
     
-    logger.info("Starting bot...")
-    try:
-        bot.infinity_polling()
-    except Exception as e:
-        logger.error(f"Bot crashed: {e}")
+    # Start document refresh thread
+    threading.Thread(target=periodic_document_refresh, daemon=True).start()
+    
+    # Start bot
+    bot.polling(none_stop=True)
