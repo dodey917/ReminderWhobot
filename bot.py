@@ -4,7 +4,7 @@ import threading
 import time
 
 # Replace with your actual Telegram Bot Token
-TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
+TOKEN = '8271927017:AAEyjfOynu3rTjBRghZuIilRIackWbbPfpU'
 bot = telebot.TeleBot(TOKEN)
 
 # Dictionary to store user reminder status and intervals
