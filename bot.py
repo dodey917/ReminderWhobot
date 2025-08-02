@@ -32,7 +32,7 @@ gdocs_reader = GoogleDocsReader(SERVICE_ACCOUNT_FILE, GOOGLE_DOCS_ID)
 user_reminders = {}
 
 # Reminder message
-REMINDER_MESSAGE = "Buy now before presale end, whale � are coming, fill your bag now."
+REMINDER_MESSAGE = "Buy now before presale end, whale 🐳 are coming, fill your bag now."
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message with the inline keyboard when the command /start is issued."""
