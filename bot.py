@@ -1,254 +1,207 @@
-import telebot
-from telebot import types
-import requests
+import os
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Updater,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    Filters,
+    CallbackContext,
+    JobQueue
+)
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import threading
-import time
 import re
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Set up logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Configuration
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-DOCUMENT_ID = "1wodxtiMwKBadOd8DoZpFccyqbMWRRCB8GgUEL-dFJHY"
-GOOGLE_CREDENTIALS_FILE = "service_account.json"  # You need to create this
+DOCUMENT_ID = '1wodxtiMwKBadOd8DoZpFccyqbMWRRCB8GgUEL-dFJHY'
+SCOPES = ['https://www.googleapis.com/auth/documents.readonly']
+SERVICE_ACCOUNT_FILE = 'service-account.json'
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '8271927017:AAEyjfOynu3rTjBRghZuIilRIackWbbPfpU')
 
-bot = telebot.TeleBot(TOKEN)
+# Initialize Google Docs service
+try:
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    service = build('docs', 'v1', credentials=creds)
+    document = service.documents().get(documentId=DOCUMENT_ID).execute()
+    doc_content = document.get('body', {}).get('content', [])
+except Exception as e:
+    logger.error(f"Error accessing Google Doc: {e}")
+    doc_content = []
 
-# Dictionary to store document content and user sessions
-document_content = ""
-suggested_questions = []
-user_sessions = {}
+def extract_text_from_doc():
+    """Extract text from Google Doc content."""
+    text = ""
+    for element in doc_content:
+        if 'paragraph' in element:
+            for paragraph_element in element['paragraph']['elements']:
+                if 'textRun' in paragraph_element:
+                    text += paragraph_element['textRun']['content']
+    return text
 
-class UserSession:
-    def __init__(self, user_id):
-        self.user_id = user_id
-        self.last_questions = []
-        self.reminder_active = False
-        self.reminder_interval = 30  # minutes
+doc_text = extract_text_from_doc()
 
-def fetch_document_content():
-    """Fetch content from Google Docs"""
-    global document_content, suggested_questions
-    
-    try:
-        credentials = service_account.Credentials.from_service_account_file(
-            GOOGLE_CREDENTIALS_FILE,
-            scopes=['https://www.googleapis.com/auth/documents.readonly']
-        )
-        
-        service = build('docs', 'v1', credentials=credentials)
-        doc = service.documents().get(documentId=DOCUMENT_ID).execute()
-        
-        # Extract text content
-        content = []
-        for elem in doc.get('body', {}).get('content', []):
-            if 'paragraph' in elem:
-                for para_elem in elem['paragraph']['elements']:
-                    if 'textRun' in para_elem:
-                        content.append(para_elem['textRun']['content'])
-        
-        document_content = " ".join(content)
-        
-        # Generate suggested questions (you can customize these)
-        suggested_questions = [
-            "What is iFart Token?",
-            "How does iFart Token work?",
-            "What are the benefits of iFart Token?",
-            "How can I buy iFart Token?",
-            "What makes iFart Token unique?",
-            "Tell me about the iFart Token team",
-            "What's the tokenomics of iFart?",
-            "Where can I trade iFart Token?"
+# Suggested questions based on document content
+suggested_questions = [
+    "What is iFart Token?",
+    "How does iFart Token work?",
+    "What are the benefits of iFart Token?",
+    "How can I buy iFart Token?",
+    "When is the presale ending?",
+    "What makes iFart Token unique?"
+]
+
+# Reminder message
+REMINDER_MESSAGE = "🚨 iFart Token Alert! 🚨\n\nBuy now before presale ends! Whales 🐳 are coming, fill your bag now!\n\nDon't miss out on this golden opportunity! 💨💨💨"
+
+def start(update: Update, context: CallbackContext) -> None:
+    """Send welcome message with inline keyboard."""
+    keyboard = [
+        [
+            InlineKeyboardButton("10 min", callback_data='10'),
+            InlineKeyboardButton("30 min", callback_data='30'),
+            InlineKeyboardButton("1 hour", callback_data='60'),
+        ],
+        [
+            InlineKeyboardButton("Start Reminders", callback_data='start_reminders'),
+            InlineKeyboardButton("Stop Reminders", callback_data='stop_reminders'),
+        ],
+        [
+            InlineKeyboardButton("Read Document", callback_data='read_doc'),
+            InlineKeyboardButton("Suggested Questions", callback_data='suggested_questions'),
         ]
-        
-        return True
-    except Exception as e:
-        print(f"Error fetching document: {e}")
-        return False
-
-def search_document(query):
-    """Search the document for relevant information"""
-    if not document_content:
-        return "I couldn't access the document. Please try again later."
+    ]
     
-    # Simple keyword-based search (you could enhance this with NLP)
-    query = query.lower()
-    sentences = re.split(r'[.!?]', document_content)
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
-    relevant_sentences = []
-    for sentence in sentences:
-        if query in sentence.lower():
-            relevant_sentences.append(sentence.strip())
-    
-    if not relevant_sentences:
-        return "I couldn't find specific information about that in the document. Maybe try rephrasing your question?"
-    
-    return "\n\n".join(relevant_sentences[:3])  # Return up to 3 relevant sentences
-
-@bot.message_handler(commands=['start', 'help'])
-def send_welcome(message):
-    user_id = message.chat.id
-    if user_id not in user_sessions:
-        user_sessions[user_id] = UserSession(user_id)
-    
-    # Try to fetch document content if we haven't already
-    if not document_content:
-        fetch_success = fetch_document_content()
-        if not fetch_success:
-            bot.reply_to(message, "⚠️ I'm having trouble accessing the knowledge base. Please try again later.")
-            return
-    
-    # Create custom keyboard
-    markup = types.ReplyKeyboardMarkup(row_width=2)
-    
-    # Add suggested questions
-    for question in suggested_questions[:4]:  # Show first 4 as buttons
-        markup.add(types.KeyboardButton(question))
-    
-    # Add reminder controls
-    reminder_btn = types.KeyboardButton('🔔 Set Reminders')
-    search_btn = types.KeyboardButton('🔍 Search Knowledge Base')
-    markup.add(reminder_btn, search_btn)
-    
-    welcome_msg = """
-💨 *Welcome to iFart Token Knowledge Bot!* 💨
-
-I can answer questions about iFart Token using our official documentation.
-
-Try one of the suggested questions or ask your own!
-
-*Reminder feature:* Get periodic updates about iFart Token.
-    """
-    
-    bot.send_message(message.chat.id, welcome_msg, 
-                    reply_markup=markup, parse_mode='Markdown')
-
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    user_id = message.chat.id
-    if user_id not in user_sessions:
-        user_sessions[user_id] = UserSession(user_id)
-    
-    session = user_sessions[user_id]
-    
-    if message.text == '🔔 Set Reminders':
-        handle_reminders(message)
-    elif message.text == '🔍 Search Knowledge Base':
-        bot.reply_to(message, "What would you like to know about iFart Token?")
-    elif message.text in suggested_questions:
-        # Handle suggested questions
-        answer = search_document(message.text)
-        bot.reply_to(message, answer)
-        
-        # Store this question in session
-        session.last_questions.append(message.text)
-    else:
-        # Handle free-form questions
-        answer = search_document(message.text)
-        bot.reply_to(message, answer)
-        
-        # Store this question in session
-        session.last_questions.append(message.text)
-
-def handle_reminders(message):
-    user_id = message.chat.id
-    session = user_sessions[user_id]
-    
-    markup = types.ReplyKeyboardMarkup(row_width=3)
-    btn_10min = types.KeyboardButton('10 min')
-    btn_30min = types.KeyboardButton('30 min')
-    btn_1hr = types.KeyboardButton('1 hour')
-    btn_start = types.KeyboardButton('🚀 Start')
-    btn_stop = types.KeyboardButton('✋ Stop')
-    btn_back = types.KeyboardButton('🔙 Back')
-    
-    if session.reminder_active:
-        status = f"Active ({session.reminder_interval} min intervals)"
-    else:
-        status = "Inactive"
-    
-    markup.add(btn_10min, btn_30min, btn_1hr, btn_start, btn_stop, btn_back)
-    
-    bot.send_message(
-        user_id,
-        f"🔔 *Reminder Settings*\n\nCurrent status: {status}\n\n"
-        "Select interval or start/stop reminders:",
-        reply_markup=markup,
-        parse_mode='Markdown'
+    update.message.reply_text(
+        "Welcome to iFart Token Mini App! 🚀💨\n\n"
+        "Set reminders or get information about iFart Token:",
+        reply_markup=reply_markup
     )
 
-@bot.message_handler(func=lambda m: m.text in ['10 min', '30 min', '1 hour'])
-def set_reminder_interval(message):
-    user_id = message.chat.id
-    session = user_sessions[user_id]
+def button_handler(update: Update, context: CallbackContext) -> None:
+    """Handle button callbacks."""
+    query = update.callback_query
+    query.answer()
     
-    if message.text == '10 min':
-        session.reminder_interval = 10
-    elif message.text == '30 min':
-        session.reminder_interval = 30
-    elif message.text == '1 hour':
-        session.reminder_interval = 60
+    chat_id = query.message.chat_id
     
-    bot.reply_to(message, f"Reminder interval set to {message.text}")
+    if query.data in ['10', '30', '60']:
+        # Set one-time reminder
+        minutes = int(query.data)
+        context.job_queue.run_once(send_reminder, minutes * 60, context=chat_id)
+        query.edit_message_text(text=f"⏰ Reminder set for {minutes} minutes!")
+    elif query.data == 'start_reminders':
+        # Start repeating reminders
+        if 'job' not in context.chat_data:
+            context.chat_data['job'] = context.job_queue.run_repeating(
+                send_reminder, interval=3600, first=0, context=chat_id
+            )
+            query.edit_message_text(text="🔔 Hourly reminders started!")
+        else:
+            query.edit_message_text(text="🔔 Reminders are already running!")
+    elif query.data == 'stop_reminders':
+        # Stop reminders
+        if 'job' in context.chat_data:
+            context.chat_data['job'].schedule_removal()
+            del context.chat_data['job']
+            query.edit_message_text(text="🔕 Reminders stopped!")
+        else:
+            query.edit_message_text(text="🔕 No active reminders to stop!")
+    elif query.data == 'read_doc':
+        # Show document summary
+        summary = doc_text[:1000] + "..." if len(doc_text) > 1000 else doc_text
+        query.edit_message_text(text=f"📄 Document Summary:\n\n{summary}")
+    elif query.data == 'suggested_questions':
+        # Show suggested questions
+        questions = "\n".join([f"• {q}" for q in suggested_questions])
+        query.edit_message_text(text=f"❓ Suggested Questions:\n\n{questions}\n\nYou can ask me any of these!")
 
-@bot.message_handler(func=lambda m: m.text == '🚀 Start')
-def start_reminders(message):
-    user_id = message.chat.id
-    session = user_sessions[user_id]
+def send_reminder(context: CallbackContext) -> None:
+    """Send reminder message."""
+    job = context.job
+    context.bot.send_message(job.context, text=REMINDER_MESSAGE)
+
+def handle_message(update: Update, context: CallbackContext) -> None:
+    """Handle text messages and answer questions."""
+    user_message = update.message.text.lower()
+    answer = find_answer_in_document(user_message)
     
-    if not session.reminder_active:
-        session.reminder_active = True
-        threading.Thread(target=send_reminders, args=(user_id,)).start()
-        bot.reply_to(message, f"🚀 Reminders started! You'll get updates every {session.reminder_interval} minutes.")
+    if answer:
+        update.message.reply_text(answer)
     else:
-        bot.reply_to(message, "Reminders are already running!")
+        update.message.reply_text(
+            "I couldn't find an answer to that in the document. "
+            "Try one of the suggested questions or ask something else!"
+        )
 
-@bot.message_handler(func=lambda m: m.text == '✋ Stop')
-def stop_reminders(message):
-    user_id = message.chat.id
-    session = user_sessions[user_id]
+def find_answer_in_document(query: str) -> str:
+    """Search for answers in the document content."""
+    keywords = re.findall(r'\w+', query.lower())
+    paragraphs = doc_text.split('\n')
+    best_paragraph = ""
+    max_matches = 0
     
-    if session.reminder_active:
-        session.reminder_active = False
-        bot.reply_to(message, "✋ Reminders stopped.")
-    else:
-        bot.reply_to(message, "Reminders aren't currently running.")
+    for para in paragraphs:
+        if not para.strip():
+            continue
+            
+        matches = sum(1 for kw in keywords if kw in para.lower())
+        if matches > max_matches:
+            max_matches = matches
+            best_paragraph = para
+            
+    if max_matches > 0:
+        return best_paragraph[:1000]  # Limit response length
+    return ""
 
-@bot.message_handler(func=lambda m: m.text == '🔙 Back')
-def back_to_main(message):
-    send_welcome(message)
+def error_handler(update: Update, context: CallbackContext) -> None:
+    """Log errors and notify user."""
+    logger.error(msg="Exception while handling update:", exc_info=context.error)
+    if update and update.message:
+        update.message.reply_text("Sorry, something went wrong. Please try again later.")
 
-def send_reminders(user_id):
-    session = user_sessions[user_id]
+def main() -> None:
+    """Start the bot."""
+    # Create the Updater
+    updater = Updater(TELEGRAM_TOKEN)
     
-    while session.reminder_active:
-        time.sleep(session.reminder_interval * 60)
-        
-        if session.reminder_active:
-            # Create a dynamic reminder message based on document content
-            reminder_msg = "💨 *iFart Token Reminder* 💨\n\n"
-            
-            # Get a random fact or update from the document
-            facts = re.findall(r'\b[A-Z][^.!?]*[.!?]', document_content)
-            if facts:
-                reminder_msg += "Did you know?\n" + facts[len(facts)//2] + "\n\n"
-            
-            reminder_msg += "Whales are sniffing around 👃\nFill your bags before the wind changes! 🌬️\n\n#iFartToTheMoon 🚀"
-            
-            bot.send_message(user_id, reminder_msg, parse_mode='Markdown')
+    # Get the dispatcher to register handlers
+    dispatcher = updater.dispatcher
 
-def periodic_document_refresh():
-    """Refresh document content periodically"""
-    while True:
-        time.sleep(3600)  # Refresh every hour
-        fetch_document_content()
+    # Register command handlers
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("help", lambda u, c: u.message.reply_text(
+        "Use /start to see the main menu. You can set reminders or ask about iFart Token."
+    )))
+    
+    # Register button handler
+    dispatcher.add_handler(CallbackQueryHandler(button_handler))
+    
+    # Register message handler
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    
+    # Register error handler
+    dispatcher.add_error_handler(error_handler)
+
+    # Start the Bot
+    updater.start_polling()
+    logger.info("Bot started and running...")
+    updater.idle()
 
 if __name__ == '__main__':
-    # Initial document fetch
-    fetch_document_content()
-    
-    # Start document refresh thread
-    threading.Thread(target=periodic_document_refresh, daemon=True).start()
-    
-    # Start bot
-    bot.polling(none_stop=True)
+    main()
