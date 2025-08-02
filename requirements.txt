@@ -2,4 +2,4 @@ python-telegram-bot==20.3
 google-api-python-client==2.84.0
 google-auth-httplib2==0.1.0
 google-auth-oauthlib==1.0.0
-aiohttp==3.9.0  # Newer version with better Python 3.13 compatibility
+httpx==0.26.0  # Alternative to aiohttp
