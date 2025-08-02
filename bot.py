@@ -1,225 +1,160 @@
 import os
 import logging
-import asyncio
-import re
-import hashlib
-from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
-    filters,
     ContextTypes,
-    JobQueue
+    MessageHandler,
+    filters
 )
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+from gdocs_integration import GoogleDocsReader
+import asyncio
+from datetime import datetime, timedelta
 
-# Configuration
-DOCUMENT_ID = '1wodxtiMwKBadOd8DoZpFccyqbMWRRCB8GgUEL-dFJHY'
-SCOPES = ['https://www.googleapis.com/auth/documents.readonly']
-SERVICE_ACCOUNT_FILE = 'service-account.json'
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-UPDATE_INTERVAL = 300  # 5 minutes in seconds
-ADMIN_IDS = [6089861817, 5584801763, 7697559889]  # Your admin IDs
-
-# Set up logging
+# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-class DocumentManager:
-    def __init__(self):
-        self.content = ""
-        self.last_hash = ""
-        self.last_updated = None
-        self.lock = asyncio.Lock()
-        self.credentials = service_account.Credentials.from_service_account_file(
-            SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-        self.service = build('docs', 'v1', credentials=self.credentials)
-        self.reminder_message = "🚨 iFart Token Alert! 🚨\n\nBuy now before presale ends! Whales 🐳 are coming!"
+# Configuration
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', '8271927017:AAEyjfOynu3rTjBRghZuIilRIackWbbPfpU')
+GOOGLE_DOCS_ID = os.getenv('GOOGLE_DOCS_ID', '1wodxtiMwKBadOd8DoZpFccyqbMWRRCB8GgUEL-dFJHY')
+SERVICE_ACCOUNT_FILE = 'reminderwhobot-2c10c31bf2ce.json'
 
-    async def update_document(self):
-        """Fetch and update document content from Google Docs"""
-        try:
-            async with self.lock:
-                document = self.service.documents().get(documentId=DOCUMENT_ID).execute()
-                doc_elements = document.get('body', {}).get('content', [])
-                
-                new_content = ""
-                for element in doc_elements:
-                    if 'paragraph' in element:
-                        for para_element in element['paragraph']['elements']:
-                            if 'textRun' in para_element:
-                                new_content += para_element['textRun']['content']
-                
-                content_hash = hashlib.md5(new_content.encode()).hexdigest()
-                if content_hash != self.last_hash:
-                    self.content = new_content
-                    self.last_hash = content_hash
-                    self.last_updated = datetime.now()
-                    logger.info("Document content updated successfully")
-                    return True
-                return False
-                
-        except HttpError as e:
-            logger.error(f"Google Docs API error: {e}")
-        except Exception as e:
-            logger.error(f"Error updating document: {e}")
-        return False
+# Initialize Google Docs reader
+gdocs_reader = GoogleDocsReader(SERVICE_ACCOUNT_FILE, GOOGLE_DOCS_ID)
 
-    async def get_response(self, query: str) -> str:
-        """Generate response based on document content"""
-        try:
-            if not self.content:
-                return "Document not loaded yet. Please try again later."
-            
-            query = query.lower().strip()
-            paragraphs = [p.strip() for p in self.content.split('\n') if p.strip()]
-            
-            # Check for Q&A pairs first
-            for i, para in enumerate(paragraphs):
-                if para.lower().startswith('q:') and query in para[2:].lower():
-                    if i+1 < len(paragraphs) and paragraphs[i+1].startswith('A:'):
-                        return paragraphs[i+1][2:].strip()
-            
-            # Check for keyword matches
-            keywords = re.findall(r'\w+', query)
-            best_match = ""
-            best_score = 0
-            
-            for para in paragraphs:
-                para_lower = para.lower()
-                score = sum(1 for kw in keywords if kw in para_lower)
-                
-                if score > best_score:
-                    best_match = para
-                    best_score = score
-            
-            return best_match if best_match else "I no sabi that one. Try ask am another way."
-            
-        except Exception as e:
-            logger.error(f"Error generating response: {e}")
-            return "Error processing your request. Try again later."
+# User reminders storage
+user_reminders = {}
 
-# Initialize document manager
-doc_manager = DocumentManager()
+# Reminder message
+REMINDER_MESSAGE = "Buy now before presale end, whale � are coming, fill your bag now."
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send welcome message with options"""
+    """Send a message with the inline keyboard when the command /start is issued."""
     keyboard = [
-        [InlineKeyboardButton("10 min reminder", callback_data='10'),
-         InlineKeyboardButton("30 min reminder", callback_data='30')],
-        [InlineKeyboardButton("1 hour reminder", callback_data='60')],
-        [InlineKeyboardButton("Refresh Content", callback_data='refresh')]
+        [
+            InlineKeyboardButton("10min Reminder", callback_data="10"),
+            InlineKeyboardButton("30min Reminder", callback_data="30"),
+            InlineKeyboardButton("1hr Reminder", callback_data="60"),
+        ],
+        [
+            InlineKeyboardButton("Stop Reminders", callback_data="stop"),
+        ]
     ]
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    last_updated = doc_manager.last_updated.strftime("%Y-%m-%d %H:%M:%S") if doc_manager.last_updated else "never"
-    
     await update.message.reply_text(
-        f"🤖 iFart Token Bot\n\n"
-        f"Last updated: {last_updated}\n\n"
-        "Ask me anything or set reminders:",
+        "Welcome to the Reminder Bot! Choose your reminder interval:",
         reply_markup=reply_markup
     )
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle user questions"""
-    try:
-        response = await doc_manager.get_response(update.message.text)
-        await update.message.reply_text(response)
-    except Exception as e:
-        logger.error(f"Error handling message: {e}")
-        await update.message.reply_text("Error don happen. Try again small time.")
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle button callbacks"""
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle button presses."""
     query = update.callback_query
     await query.answer()
     
-    chat_id = query.message.chat_id
+    user_id = query.from_user.id
+    data = query.data
     
-    if query.data in ['10', '30', '60']:
-        # Set reminder
-        minutes = int(query.data)
-        context.job_queue.run_once(
-            send_reminder, 
-            minutes * 60, 
-            chat_id=chat_id,
-            data={"message": doc_manager.reminder_message}
-        )
-        await query.edit_message_text(text=f"⏰ Reminder set for {minutes} minutes!")
-    elif query.data == 'refresh':
-        # Refresh content
-        was_updated = await doc_manager.update_document()
-        if was_updated:
-            await query.edit_message_text(text="✅ Document content refreshed!")
+    if data == "stop":
+        if user_id in user_reminders:
+            user_reminders[user_id]['active'] = False
+            if user_reminders[user_id]['task']:
+                user_reminders[user_id]['task'].cancel()
+            await query.edit_message_text(text="Reminders stopped!")
         else:
-            await query.edit_message_text(text="ℹ️ No new updates in document")
+            await query.edit_message_text(text="No active reminders to stop.")
+    else:
+        try:
+            minutes = int(data)
+            if user_id in user_reminders and user_reminders[user_id]['active']:
+                user_reminders[user_id]['task'].cancel()
+            
+            # Schedule the reminder
+            user_reminders[user_id] = {
+                'active': True,
+                'interval': minutes,
+                'task': asyncio.create_task(send_reminders(user_id, minutes, context.bot))
+            }
+            
+            await query.edit_message_text(
+                text=f"Reminder set for every {minutes} minutes!",
+                reply_markup=query.message.reply_markup
+            )
+        except ValueError:
+            await query.edit_message_text(text="Invalid option selected.")
 
-async def send_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send reminder message"""
+async def send_reminders(user_id: int, interval_minutes: int, bot) -> None:
+    """Send periodic reminders to the user."""
     try:
-        await context.bot.send_message(
-            chat_id=context.job.chat_id,
-            text=context.job.data["message"]
-        )
+        while True:
+            await asyncio.sleep(interval_minutes * 60)
+            
+            # Check if reminders are still active for this user
+            if user_id not in user_reminders or not user_reminders[user_id]['active']:
+                break
+                
+            try:
+                await bot.send_message(user_id, REMINDER_MESSAGE)
+            except Exception as e:
+                logger.error(f"Failed to send reminder to user {user_id}: {e}")
+                break
+    except asyncio.CancelledError:
+        logger.info(f"Reminders cancelled for user {user_id}")
     except Exception as e:
-        logger.error(f"Error sending reminder: {e}")
+        logger.error(f"Error in reminder task for user {user_id}: {e}")
 
-async def scheduled_updates(context: ContextTypes.DEFAULT_TYPE):
-    """Scheduled document updates"""
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle any text message by fetching response from Google Docs."""
     try:
-        logger.info("Running scheduled document update...")
-        was_updated = await doc_manager.update_document()
-        if was_updated:
-            for admin_id in ADMIN_IDS:
-                try:
-                    await context.bot.send_message(
-                        chat_id=admin_id,
-                        text="📝 iFart Token Doc updated! Bot has new info."
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to notify admin {admin_id}: {e}")
+        user_message = update.message.text
+        logger.info(f"Received message from user {update.effective_user.id}: {user_message}")
+        
+        # Get response from Google Docs
+        response = await gdocs_reader.get_response(user_message)
+        
+        if response:
+            await update.message.reply_text(response)
+        else:
+            await update.message.reply_text("I couldn't find a response for that question.")
     except Exception as e:
-        logger.error(f"Scheduled update error: {e}")
+        logger.error(f"Error handling message: {e}")
+        await update.message.reply_text("Sorry, I encountered an error processing your request.")
 
-async def initialize(app: Application):
-    """Initialize the bot"""
-    try:
-        await doc_manager.update_document()
-        logger.info("Initial document load complete")
-    except Exception as e:
-        logger.error(f"Initial document load failed: {e}")
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log errors and handle them gracefully."""
+    logger.error(f"Update {update} caused error {context.error}")
+    
+    if update and hasattr(update, 'message'):
+        try:
+            await update.message.reply_text("Sorry, something went wrong. Please try again.")
+        except Exception as e:
+            logger.error(f"Failed to send error message: {e}")
 
 def main() -> None:
-    """Start the bot"""
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    
-    # Register handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    
-    # Schedule background tasks
-    if application.job_queue:
-        application.job_queue.run_repeating(
-            scheduled_updates,
-            interval=UPDATE_INTERVAL,
-            first=10
-        )
-    
-    # Run the bot
-    application.run_polling(
-        on_startup=initialize,
-        drop_pending_updates=True
-    )
+    """Start the bot."""
+    try:
+        # Create the Application
+        application = Application.builder().token(TELEGRAM_TOKEN).build()
+        
+        # Add handlers
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(button))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_error_handler(error_handler)
+        
+        # Start the bot
+        logger.info("Starting bot...")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as e:
+        logger.critical(f"Failed to start bot: {e}")
+        raise
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
