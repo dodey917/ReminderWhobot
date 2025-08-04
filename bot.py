@@ -90,13 +90,22 @@ def send_faq_suggestions(chat_id):
     
     # Add questions as buttons in two columns
     faq_buttons = list(faq_content.keys())[:6]  # First 6 questions
-    for i in range(0, len(faq_buttons), 2):
-        if i+1 < len(faq_buttons):
-            markup.add(
-                types.InlineKeyboardButton(faq_buttons[i], callback_data=faq_buttons[i]),
-                types.InlineKeyboardButton(faq_buttons[i+1], callback_data=faq_buttons[i+1])
-        else:
-            markup.add(types.InlineKeyboardButton(faq_buttons[i], callback_data=faq_buttons[i]))
+    row1 = [
+        types.InlineKeyboardButton(faq_buttons[0], callback_data=faq_buttons[0]),
+        types.InlineKeyboardButton(faq_buttons[1], callback_data=faq_buttons[1])
+    ]
+    row2 = [
+        types.InlineKeyboardButton(faq_buttons[2], callback_data=faq_buttons[2]),
+        types.InlineKeyboardButton(faq_buttons[3], callback_data=faq_buttons[3])
+    ]
+    row3 = [
+        types.InlineKeyboardButton(faq_buttons[4], callback_data=faq_buttons[4]),
+        types.InlineKeyboardButton(faq_buttons[5], callback_data=faq_buttons[5])
+    ]
+    
+    markup.add(*row1)
+    markup.add(*row2)
+    markup.add(*row3)
     
     # Add "More Questions" button if there are more
     if len(faq_content) > 6:
@@ -113,13 +122,15 @@ def send_official_links(chat_id):
         buttons.append(types.InlineKeyboardButton(text, url=url))
     
     # Add buttons in rows of 2
-    for i in range(0, len(buttons), 2):
-        if i+1 < len(buttons):
-            markup.add(buttons[i], buttons[i+1])
-        else:
-            markup.add(buttons[i])
+    row1 = buttons[:2]
+    row2 = buttons[2:4]
+    row3 = buttons[4:]
     
-    bot.send_message(chat_id, "🔗 Official iFart Links:", reply_markup=markup)
+    markup.add(*row1)
+    markup.add(*row2)
+    markup.add(*row3)
+    
+    bot.send_message(chat_id, "🔗 Official iFart Links:", reply_markup=markup, disable_web_page_preview=True)
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
@@ -129,13 +140,17 @@ def handle_callback(call):
         
         # Get remaining questions (skip first 6)
         faq_buttons = list(faq_content.keys())[6:]
-        for i in range(0, len(faq_buttons), 2):
-            if i+1 < len(faq_buttons):
-                markup.add(
-                    types.InlineKeyboardButton(faq_buttons[i], callback_data=faq_buttons[i]),
-                    types.InlineKeyboardButton(faq_buttons[i+1], callback_data=faq_buttons[i+1])
-            else:
-                markup.add(types.InlineKeyboardButton(faq_buttons[i], callback_data=faq_buttons[i]))
+        row1 = [
+            types.InlineKeyboardButton(faq_buttons[0], callback_data=faq_buttons[0]),
+            types.InlineKeyboardButton(faq_buttons[1], callback_data=faq_buttons[1])
+        ]
+        row2 = [
+            types.InlineKeyboardButton(faq_buttons[2], callback_data=faq_buttons[2]),
+            types.InlineKeyboardButton(faq_buttons[3], callback_data=faq_buttons[3])
+        ]
+        
+        markup.add(*row1)
+        markup.add(*row2)
         
         # Add back button
         markup.add(types.InlineKeyboardButton("🔙 Back to Main", callback_data="back_to_main"))
@@ -245,5 +260,6 @@ class RepeatedTimer:
         self._timer.cancel()
         self.is_running = False
 
-print("Bot is running...")
-bot.infinity_polling()
+if __name__ == '__main__':
+    print("Bot is running...")
+    bot.infinity_polling()
