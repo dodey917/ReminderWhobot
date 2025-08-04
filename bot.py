@@ -2,6 +2,7 @@ import telebot
 from telebot import types
 import threading
 import time
+import random
 
 bot = telebot.TeleBot("8271927017:AAEyjfOynu3rTjBRghZuIilRIackWbbPfpU")
 
@@ -56,136 +57,115 @@ official_links = {
 def send_welcome(message):
     # Create main keyboard with reminder options
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    btn_start = types.KeyboardButton('🔄 Start/Restart')
     btn_10min = types.KeyboardButton('⏰ 10min Reminder')
     btn_30min = types.KeyboardButton('⏰ 30min Reminder')
     btn_1hr = types.KeyboardButton('⏰ 1hr Reminder')
     btn_stop = types.KeyboardButton('🛑 Stop Reminders')
-    markup.add(btn_start, btn_10min, btn_30min, btn_1hr, btn_stop)
+    btn_info = types.KeyboardButton('📚 Project Info')
+    markup.add(btn_10min, btn_30min, btn_1hr, btn_stop, btn_info)
     
     welcome_msg = """🚀 Welcome to iFart Reminder Bot! 💨
 
-Use the buttons to:
-- Set automatic buy reminders
-- Get latest project updates
-- Access important links
+Use the buttons below to:
+- Set buy reminders ⏰
+- Stop reminders 🛑
+- Get project info 📚
 
 Remember: Paper hands fuel your gains; diamond hands grow their bags! 💎"""
     
     bot.send_message(message.chat.id, welcome_msg, reply_markup=markup)
-    
-    # Send FAQ suggestions and links
-    send_info_message(message.chat.id)
 
-def send_info_message(chat_id):
-    # First send FAQ suggestions
-    send_faq_suggestions(chat_id)
+@bot.message_handler(func=lambda message: message.text == '📚 Project Info')
+def show_info_options(message):
+    # Create inline keyboard for info options
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    btn_faq = types.InlineKeyboardButton("❓ FAQ & Questions", callback_data="show_faq")
+    btn_links = types.InlineKeyboardButton("📞 Contact Us & Links", callback_data="show_links")
+    markup.add(btn_faq, btn_links)
     
-    # Then send official links
-    send_official_links(chat_id)
+    bot.send_message(message.chat.id, "Choose what information you need:", reply_markup=markup)
 
-def send_faq_suggestions(chat_id):
-    # Create inline keyboard for FAQ suggestions
+@bot.callback_query_handler(func=lambda call: call.data == "show_faq")
+def show_faq_menu(call):
+    # Create FAQ menu with categories
     markup = types.InlineKeyboardMarkup(row_width=1)
     
-    # Add questions as buttons in two columns
-    faq_buttons = list(faq_content.keys())[:6]  # First 6 questions
-    row1 = [
-        types.InlineKeyboardButton(faq_buttons[0], callback_data=faq_buttons[0]),
-        types.InlineKeyboardButton(faq_buttons[1], callback_data=faq_buttons[1])
-    ]
-    row2 = [
-        types.InlineKeyboardButton(faq_buttons[2], callback_data=faq_buttons[2]),
-        types.InlineKeyboardButton(faq_buttons[3], callback_data=faq_buttons[3])
-    ]
-    row3 = [
-        types.InlineKeyboardButton(faq_buttons[4], callback_data=faq_buttons[4]),
-        types.InlineKeyboardButton(faq_buttons[5], callback_data=faq_buttons[5])
-    ]
+    categories = {
+        "📊 Tokenomics": ["What is iFart Token?", "How does the deflationary mechanism work?", "Token Distribution"],
+        "🛠️ Features": ["What is the iFart Mini-App?", "Community Benefits"],
+        "🚀 Investment": ["Why invest in iFart?", "How to buy iFart Token?", "Presale Details"],
+        "🔍 Other": ["Roadmap Summary", "Team & Security"]
+    }
     
-    markup.add(*row1)
-    markup.add(*row2)
-    markup.add(*row3)
+    for category, questions in categories.items():
+        markup.add(types.InlineKeyboardButton(category, callback_data=f"faq_category:{category}"))
     
-    # Add "More Questions" button if there are more
-    if len(faq_content) > 6:
-        markup.add(types.InlineKeyboardButton("❓ More Questions", callback_data="more_questions"))
-    
-    bot.send_message(chat_id, "📚 iFart Token Information - Select a question:", reply_markup=markup)
+    bot.edit_message_text("Select a category to see related questions:",
+                        call.message.chat.id,
+                        call.message.message_id,
+                        reply_markup=markup)
 
-def send_official_links(chat_id):
+@bot.callback_query_handler(func=lambda call: call.data.startswith("faq_category:"))
+def show_category_questions(call):
+    category = call.data.split(":")[1]
+    
+    # Map categories to questions
+    category_questions = {
+        "📊 Tokenomics": ["What is iFart Token?", "How does the deflationary mechanism work?", "Token Distribution"],
+        "🛠️ Features": ["What is the iFart Mini-App?", "Community Benefits"],
+        "🚀 Investment": ["Why invest in iFart?", "How to buy iFart Token?", "Presale Details"],
+        "🔍 Other": ["Roadmap Summary", "Team & Security"]
+    }
+    
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    
+    for question in category_questions[category]:
+        markup.add(types.InlineKeyboardButton(question, callback_data=f"faq:{question}"))
+    
+    markup.add(types.InlineKeyboardButton("🔙 Back to Categories", callback_data="show_faq"))
+    
+    bot.edit_message_text(f"Questions about {category}:",
+                        call.message.chat.id,
+                        call.message.message_id,
+                        reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("faq:"))
+def show_faq_answer(call):
+    question = call.data.split(":")[1]
+    answer = faq_content[question]
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🔙 Back to Questions", callback_data=f"faq_category:{get_category_for_question(question)}"))
+    
+    bot.send_message(call.message.chat.id, answer, parse_mode='Markdown', reply_markup=markup)
+    bot.answer_callback_query(call.id)
+
+def get_category_for_question(question):
+    # Helper function to find category for a question
+    categories = {
+        "📊 Tokenomics": ["What is iFart Token?", "How does the deflationary mechanism work?", "Token Distribution"],
+        "🛠️ Features": ["What is the iFart Mini-App?", "Community Benefits"],
+        "🚀 Investment": ["Why invest in iFart?", "How to buy iFart Token?", "Presale Details"],
+        "🔍 Other": ["Roadmap Summary", "Team & Security"]
+    }
+    
+    for category, questions in categories.items():
+        if question in questions:
+            return category
+    return "🔍 Other"
+
+@bot.callback_query_handler(func=lambda call: call.data == "show_links")
+def show_contact_links(call):
     # Create inline keyboard for official links
-    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup = types.InlineKeyboardMarkup(row_width=1)
     
-    buttons = []
     for text, url in official_links.items():
-        buttons.append(types.InlineKeyboardButton(text, url=url))
+        markup.add(types.InlineKeyboardButton(text, url=url))
     
-    # Add buttons in rows of 2
-    row1 = buttons[:2]
-    row2 = buttons[2:4]
-    row3 = buttons[4:]
-    
-    markup.add(*row1)
-    markup.add(*row2)
-    markup.add(*row3)
-    
-    bot.send_message(chat_id, "🔗 Official iFart Links:", reply_markup=markup, disable_web_page_preview=True)
-
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    if call.data == "more_questions":
-        # Show additional questions
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        
-        # Get remaining questions (skip first 6)
-        faq_buttons = list(faq_content.keys())[6:]
-        row1 = [
-            types.InlineKeyboardButton(faq_buttons[0], callback_data=faq_buttons[0]),
-            types.InlineKeyboardButton(faq_buttons[1], callback_data=faq_buttons[1])
-        ]
-        row2 = [
-            types.InlineKeyboardButton(faq_buttons[2], callback_data=faq_buttons[2]),
-            types.InlineKeyboardButton(faq_buttons[3], callback_data=faq_buttons[3])
-        ]
-        
-        markup.add(*row1)
-        markup.add(*row2)
-        
-        # Add back button
-        markup.add(types.InlineKeyboardButton("🔙 Back to Main", callback_data="back_to_main"))
-        
-        bot.edit_message_text("📚 More iFart Questions:", 
-                           call.message.chat.id, 
-                           call.message.message_id, 
-                           reply_markup=markup)
-    
-    elif call.data == "back_to_main":
-        # Return to main FAQ view
-        bot.answer_callback_query(call.id)
-        send_faq_suggestions(call.message.chat.id)
-        try:
-            bot.delete_message(call.message.chat.id, call.message.message_id)
-        except:
-            pass
-    
-    elif call.data in faq_content:
-        # Send answer to the question
-        answer = faq_content[call.data]
-        bot.send_message(call.message.chat.id, answer, parse_mode='Markdown')
-        bot.answer_callback_query(call.id)
-
-@bot.message_handler(func=lambda message: message.text == '🔄 Start/Restart')
-def restart_bot(message):
-    # Clear any existing reminders
-    chat_id = message.chat.id
-    if chat_id in active_reminders:
-        active_reminders[chat_id].cancel()
-        del active_reminders[chat_id]
-    
-    # Resend welcome message
-    send_welcome(message)
-    bot.reply_to(message, "🔄 Bot has been restarted! All reminders cleared.")
+    bot.edit_message_text("📞 Contact Us & Official Links:",
+                        call.message.chat.id,
+                        call.message.message_id,
+                        reply_markup=markup)
 
 @bot.message_handler(func=lambda message: message.text in ['⏰ 10min Reminder', '⏰ 30min Reminder', '⏰ 1hr Reminder'])
 def set_reminder(message):
@@ -194,6 +174,7 @@ def set_reminder(message):
     # Cancel any existing reminder
     if chat_id in active_reminders:
         active_reminders[chat_id].cancel()
+        del active_reminders[chat_id]
     
     # Determine interval
     if '10min' in message.text:
@@ -209,15 +190,15 @@ def set_reminder(message):
     # Create and start reminder
     active_reminders[chat_id] = RepeatedTimer(interval, send_reminder, chat_id)
     
-    # Send confirmation with website link
-    confirmation = f"""✅ Reminder set for every {duration}!
+    # Send confirmation
+    confirmation = f"""✅ {duration} reminder activated!
     
-You'll receive this message periodically:
+You'll receive periodic updates:
 {reminder_message}
 
-🌐 Visit [iFart Website](https://ifarttoken.com) for latest updates"""
+To stop reminders, click '🛑 Stop Reminders'"""
     
-    bot.reply_to(message, confirmation, parse_mode='Markdown')
+    bot.reply_to(message, confirmation)
 
 @bot.message_handler(func=lambda message: message.text == '🛑 Stop Reminders')
 def stop_reminders(message):
@@ -225,14 +206,13 @@ def stop_reminders(message):
     if chat_id in active_reminders:
         active_reminders[chat_id].cancel()
         del active_reminders[chat_id]
-        bot.reply_to(message, "🛑 Reminders stopped! You can set new ones anytime.")
+        bot.reply_to(message, "🛑 Reminders stopped successfully!")
     else:
-        bot.reply_to(message, "You don't have any active reminders to stop.")
+        bot.reply_to(message, "No active reminders to stop.")
 
 def send_reminder(chat_id):
     # Send the reminder message plus a random additional message
-    import random
-    full_message = f"{reminder_message}\n\n{random.choice(additional_messages)}\n\n🌐 [iFart Website](https://ifarttoken.com)"
+    full_message = f"{reminder_message}\n\n{random.choice(additional_messages)}"
     bot.send_message(chat_id, full_message, parse_mode='Markdown')
 
 class RepeatedTimer:
