@@ -10,210 +10,209 @@ bot = telebot.TeleBot("8271927017:AAEyjfOynu3rTjBRghZuIilRIackWbbPfpU")
 active_reminders = {}
 
 # Reminder message
-reminder_message = "🚨 Buy now before presale end, whale 🐳 are coming, fill your bag now! 🚨"
+reminder_message = "🚨 Buy now before presale ends! Whales 🐳 are coming, fill your bags! 🚨"
 
 # Additional messages
 additional_messages = [
-    "🔥 iFart token is deflationary - every transaction burns tokens increasing scarcity! 🔥",
-    "💎 Holders get rewarded when paper hands sell - diamond hands win in iFart ecosystem! 💎",
-    "🎮 Play the iFart mini-app on Telegram to earn tokens while having fun! 🎮",
-    "📈 Transaction tax: 3% (1.5% burned, 1.5% to liquidity pool) 📉",
-    "🔒 6-month vesting period for all mini-app rewards 🔒"
+    "🔥 iFart burns 1.5% of every transaction - increasing scarcity!",
+    "💎 Diamond hands get rewarded when paper hands sell!",
+    "🎮 Earn tokens by playing our Telegram mini-app!",
+    "📈 3% transaction tax (1.5% burned, 1.5% to liquidity)",
+    "🔒 All rewards have 6-month vesting for stability"
 ]
 
-# FAQ content from whitepaper (expanded)
+# FAQ content
 faq_content = {
-    "What is iFart Token?": "iFart is a groundbreaking meme token designed to revolutionize crypto economics through strategic tokenomics and community-driven utility. Built on a deflationary model, iFart rewards long-term holders while penalizing panic sellers, creating a self-sustaining ecosystem.",
+    # Tokenomics
+    "Token Supply": "💰 Total supply: 1B $iFART\n- 30% Mini-App Rewards\n- 20% Locked Liquidity\n- 15% Airdrops\n- 10% Team (3yr vesting)",
+    "Tax Structure": "📊 3% transaction tax:\n🔥 1.5% permanently burned\n💧 1.5% to liquidity pool",
     
-    "How does the deflationary mechanism work?": "Every transaction incurs a 3% tax, split into:\n🔥 1.5% permanently burned (removed from circulation)\n💧 1.5% added to Liquidity Pool (strengthening price stability)\nThis creates scarcity and increases token value over time.",
+    # Features
+    "Mini-App": "🎮 Telegram mini-app features:\n- Daily spin wheel\n- Social tasks\n- Crypto quizzes\n- Fart Rain events",
     
-    "What is the iFart Mini-App?": "🎮 Hosted on Telegram with 500K+ users:\n- Spin Wheel: Daily token rewards\n- Social Tasks: Earn for sharing\n- Quizzes: Crypto challenges\n- Fart Rain: Real-time events\n📆 All rewards have 6-month vesting",
+    # Investment
+    "How to Buy": "🛒 Purchase steps:\n1) Get BNB\n2) Swap on our DEX\n3) HODL for rewards\n🌐 [Official Website](https://ifarttoken.com)",
+    "Why Invest?": "💎 Unique value:\n- Viral Telegram integration\n- Anti-whale mechanics\n- 90% user retention\n🎯 1B user target",
     
-    "Token Distribution": "💰 Total Supply: 1B $iFART\n- 30% Mini-App Rewards\n- 20% Liquidity Pool (locked 2y)\n- 15% Community Airdrops\n- 10% Team/Dev (vested 3y)\n- 25% Presale/Public",
-    
-    "Roadmap Summary": "🛣️ Growth Phases:\n1. 10K users: Wallet submission\n2. 30K users: Mobile apps\n3. 50K users: DEX launch\n4. 100K users: Auto-payouts\n5. 1B users: Web3 ecosystem",
-    
-    "How to buy iFart Token?": "🛒 Purchase Steps:\n1. Get BNB in your wallet\n2. Connect to our DEX (coming at 50K users)\n3. Swap BNB for $iFART\n4. HODL for rewards!\n🌐 Website: [ifarttoken.com](https://ifarttoken.com)",
-    
-    "Why invest in iFart?": "💡 Unique Value:\n- Viral Telegram integration\n- Gamified earning\n- Anti-whale mechanics\n- Strong tokenomics\n- 90% user retention\n🎯 Target: 1B users by 2027",
-    
-    "Team & Security": "👨💻 Team:\n- Doxxed core members\n- 10% tokens vested 3 years\n🔒 Security:\n- LP locked 2 years\n- Regular smart contract audits\n- Community governance",
-    
-    "Presale Details": "🎟️ Presale Info:\n- 25% of total supply\n- Bonus for early participants\n- Vesting schedule applies\n⚠️ Ends soon! Fill your bags!",
-    
-    "Community Benefits": "🤝 Community Perks:\n- Meme contests with prizes\n- Leaderboard rewards\n- Squad collaborations\n- Governance voting\n- Exclusive NFT airdrops"
+    # Roadmap
+    "Next Milestone": "🚀 At 50K users:\n- DEX launch\n- Public trading\n- Auto-rewards"
 }
 
 # Official links
 official_links = {
-    "🌐 Website": "https://ifarttoken.com",
-    "📄 Whitepaper": "https://ifarttoken.com/whitepaper",
-    "📱 Telegram": "https://t.me/ifartofficial",
-    "🐦 Twitter": "https://twitter.com/ifarttoken",
-    "📊 DexTools": "https://www.dextools.io/ifart"
+    "Website": "https://ifarttoken.com",
+    "Telegram": "https://t.me/ifartofficial",
+    "Twitter": "https://twitter.com/ifarttoken",
+    "Whitepaper": "https://ifarttoken.com/whitepaper"
 }
+
+# ======================
+# KEYBOARD CONSTRUCTORS
+# ======================
+
+def main_keyboard():
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    buttons = [
+        types.KeyboardButton('⏰ 10min Reminder'),
+        types.KeyboardButton('⏰ 30min Reminder'),
+        types.KeyboardButton('⏰ 1hr Reminder'),
+        types.KeyboardButton('🛑 Stop Reminders'),
+        types.KeyboardButton('ℹ️ Project Info')
+    ]
+    markup.add(*buttons)
+    return markup
+
+def faq_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    categories = [
+        ("💰 Tokenomics", "faq_tokenomics"),
+        ("🎮 Features", "faq_features"),
+        ("🚀 Investment", "faq_investment"),
+        ("📅 Roadmap", "faq_roadmap")
+    ]
+    for text, callback in categories:
+        markup.add(types.InlineKeyboardButton(text, callback_data=callback))
+    return markup
+
+def contact_keyboard():
+    markup = types.InlineKeyboardMarkup()
+    for text, url in official_links.items():
+        markup.add(types.InlineKeyboardButton(text, url=url))
+    return markup
+
+# ======================
+# MESSAGE HANDLERS
+# ======================
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    # Create main keyboard with reminder options
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    btn_10min = types.KeyboardButton('⏰ 10min Reminder')
-    btn_30min = types.KeyboardButton('⏰ 30min Reminder')
-    btn_1hr = types.KeyboardButton('⏰ 1hr Reminder')
-    btn_stop = types.KeyboardButton('🛑 Stop Reminders')
-    btn_info = types.KeyboardButton('📚 Project Info')
-    markup.add(btn_10min, btn_30min, btn_1hr, btn_stop, btn_info)
-    
-    welcome_msg = """🚀 Welcome to iFart Reminder Bot! 💨
+    welcome_msg = """🚀 iFart Reminder Bot 💨
 
-Use the buttons below to:
-- Set buy reminders ⏰
-- Stop reminders 🛑
-- Get project info 📚
+Set price alerts and get project updates!
 
-Remember: Paper hands fuel your gains; diamond hands grow their bags! 💎"""
+*Main Controls:*
+- ⏰ Set reminders
+- 🛑 Stop reminders
+- ℹ️ Project details"""
     
-    bot.send_message(message.chat.id, welcome_msg, reply_markup=markup)
+    bot.send_message(message.chat.id, welcome_msg, 
+                   reply_markup=main_keyboard(),
+                   parse_mode='Markdown')
 
-@bot.message_handler(func=lambda message: message.text == '📚 Project Info')
-def show_info_options(message):
-    # Create inline keyboard for info options
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_faq = types.InlineKeyboardButton("❓ FAQ & Questions", callback_data="show_faq")
-    btn_links = types.InlineKeyboardButton("📞 Contact Us & Links", callback_data="show_links")
-    markup.add(btn_faq, btn_links)
-    
-    bot.send_message(message.chat.id, "Choose what information you need:", reply_markup=markup)
+@bot.message_handler(func=lambda m: m.text == 'ℹ️ Project Info')
+def show_info_menu(message):
+    markup = types.InlineKeyboardMarkup()
+    markup.row(
+        types.InlineKeyboardButton("❓ FAQ", callback_data="show_faq"),
+        types.InlineKeyboardButton("📞 Contact", callback_data="show_contact")
+    )
+    bot.send_message(message.chat.id, "Choose an option:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "show_faq")
-def show_faq_menu(call):
-    # Create FAQ menu with categories
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    
-    categories = {
-        "📊 Tokenomics": ["What is iFart Token?", "How does the deflationary mechanism work?", "Token Distribution"],
-        "🛠️ Features": ["What is the iFart Mini-App?", "Community Benefits"],
-        "🚀 Investment": ["Why invest in iFart?", "How to buy iFart Token?", "Presale Details"],
-        "🔍 Other": ["Roadmap Summary", "Team & Security"]
-    }
-    
-    for category, questions in categories.items():
-        markup.add(types.InlineKeyboardButton(category, callback_data=f"faq_category:{category}"))
-    
-    bot.edit_message_text("Select a category to see related questions:",
+def show_faq(call):
+    bot.edit_message_text("📚 Frequently Asked Questions",
                         call.message.chat.id,
                         call.message.message_id,
-                        reply_markup=markup)
+                        reply_markup=faq_keyboard())
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("faq_category:"))
-def show_category_questions(call):
-    category = call.data.split(":")[1]
+@bot.callback_query_handler(func=lambda call: call.data.startswith("faq_"))
+def show_faq_category(call):
+    category = call.data.split("_")[1]
     
-    # Map categories to questions
     category_questions = {
-        "📊 Tokenomics": ["What is iFart Token?", "How does the deflationary mechanism work?", "Token Distribution"],
-        "🛠️ Features": ["What is the iFart Mini-App?", "Community Benefits"],
-        "🚀 Investment": ["Why invest in iFart?", "How to buy iFart Token?", "Presale Details"],
-        "🔍 Other": ["Roadmap Summary", "Team & Security"]
+        "tokenomics": ["Token Supply", "Tax Structure"],
+        "features": ["Mini-App"],
+        "investment": ["How to Buy", "Why Invest?"],
+        "roadmap": ["Next Milestone"]
     }
     
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    
+    markup = types.InlineKeyboardMarkup()
     for question in category_questions[category]:
-        markup.add(types.InlineKeyboardButton(question, callback_data=f"faq:{question}"))
+        markup.add(types.InlineKeyboardButton(question, callback_data=f"answer_{question}"))
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="show_faq"))
     
-    markup.add(types.InlineKeyboardButton("🔙 Back to Categories", callback_data="show_faq"))
-    
-    bot.edit_message_text(f"Questions about {category}:",
-                        call.message.chat.id,
-                        call.message.message_id,
-                        reply_markup=markup)
+    bot.edit_message_text(f"📖 {category.capitalize()} Questions",
+                         call.message.chat.id,
+                         call.message.message_id,
+                         reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("faq:"))
-def show_faq_answer(call):
-    question = call.data.split(":")[1]
+@bot.callback_query_handler(func=lambda call: call.data.startswith("answer_"))
+def show_answer(call):
+    question = call.data.split("_", 1)[1]
     answer = faq_content[question]
     
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("🔙 Back to Questions", callback_data=f"faq_category:{get_category_for_question(question)}"))
+    markup.add(types.InlineKeyboardButton("🔙 Back to Questions", callback_data=f"faq_{get_category(question)}"))
     
-    bot.send_message(call.message.chat.id, answer, parse_mode='Markdown', reply_markup=markup)
-    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, 
+                    f"*{question}*\n\n{answer}",
+                    parse_mode='Markdown',
+                    reply_markup=markup)
 
-def get_category_for_question(question):
-    # Helper function to find category for a question
-    categories = {
-        "📊 Tokenomics": ["What is iFart Token?", "How does the deflationary mechanism work?", "Token Distribution"],
-        "🛠️ Features": ["What is the iFart Mini-App?", "Community Benefits"],
-        "🚀 Investment": ["Why invest in iFart?", "How to buy iFart Token?", "Presale Details"],
-        "🔍 Other": ["Roadmap Summary", "Team & Security"]
-    }
-    
-    for category, questions in categories.items():
+def get_category(question):
+    for cat, questions in {
+        "tokenomics": ["Token Supply", "Tax Structure"],
+        "features": ["Mini-App"],
+        "investment": ["How to Buy", "Why Invest?"],
+        "roadmap": ["Next Milestone"]
+    }.items():
         if question in questions:
-            return category
-    return "🔍 Other"
+            return cat
+    return "tokenomics"
 
-@bot.callback_query_handler(func=lambda call: call.data == "show_links")
-def show_contact_links(call):
-    # Create inline keyboard for official links
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    
-    for text, url in official_links.items():
-        markup.add(types.InlineKeyboardButton(text, url=url))
-    
-    bot.edit_message_text("📞 Contact Us & Official Links:",
+@bot.callback_query_handler(func=lambda call: call.data == "show_contact")
+def show_contact(call):
+    bot.edit_message_text("📞 Official Links:",
                         call.message.chat.id,
                         call.message.message_id,
-                        reply_markup=markup)
+                        reply_markup=contact_keyboard())
 
-@bot.message_handler(func=lambda message: message.text in ['⏰ 10min Reminder', '⏰ 30min Reminder', '⏰ 1hr Reminder'])
+# ======================
+# REMINDER SYSTEM
+# ======================
+
+@bot.message_handler(func=lambda m: m.text in ['⏰ 10min Reminder', '⏰ 30min Reminder', '⏰ 1hr Reminder'])
 def set_reminder(message):
     chat_id = message.chat.id
     
-    # Cancel any existing reminder
+    # Cancel existing reminder
     if chat_id in active_reminders:
         active_reminders[chat_id].cancel()
-        del active_reminders[chat_id]
     
-    # Determine interval
-    if '10min' in message.text:
-        interval = 600  # 10 minutes in seconds
-        duration = "10 minutes"
-    elif '30min' in message.text:
-        interval = 1800  # 30 minutes
-        duration = "30 minutes"
-    else:
-        interval = 3600  # 1 hour
-        duration = "1 hour"
+    # Set new reminder
+    interval = {
+        '10min': 600,
+        '30min': 1800,
+        '1hr': 3600
+    }[message.text.split()[1].lower()]
     
-    # Create and start reminder
     active_reminders[chat_id] = RepeatedTimer(interval, send_reminder, chat_id)
     
-    # Send confirmation
-    confirmation = f"""✅ {duration} reminder activated!
-    
-You'll receive periodic updates:
-{reminder_message}
+    # Smart confirmation message
+    emoji = random.choice(["🚀", "💎", "🔥", "🤑"])
+    duration = message.text.split()[1]
+    bot.reply_to(message, f"{emoji} {duration} alerts activated!\n\nI'll remind you to watch for whale movements.")
 
-To stop reminders, click '🛑 Stop Reminders'"""
-    
-    bot.reply_to(message, confirmation)
-
-@bot.message_handler(func=lambda message: message.text == '🛑 Stop Reminders')
+@bot.message_handler(func=lambda m: m.text == '🛑 Stop Reminders')
 def stop_reminders(message):
     chat_id = message.chat.id
     if chat_id in active_reminders:
         active_reminders[chat_id].cancel()
         del active_reminders[chat_id]
-        bot.reply_to(message, "🛑 Reminders stopped successfully!")
+        bot.reply_to(message, "🔕 Reminders stopped. You can relax now!")
     else:
         bot.reply_to(message, "No active reminders to stop.")
 
 def send_reminder(chat_id):
-    # Send the reminder message plus a random additional message
-    full_message = f"{reminder_message}\n\n{random.choice(additional_messages)}"
-    bot.send_message(chat_id, full_message, parse_mode='Markdown')
+    try:
+        msg = f"{reminder_message}\n\n{random.choice(additional_messages)}"
+        bot.send_message(chat_id, msg, parse_mode='Markdown')
+    except Exception as e:
+        print(f"Reminder error: {e}")
+
+# ======================
+# TIMER CLASS
+# ======================
 
 class RepeatedTimer:
     def __init__(self, interval, function, *args, **kwargs):
@@ -241,5 +240,5 @@ class RepeatedTimer:
         self.is_running = False
 
 if __name__ == '__main__':
-    print("Bot is running...")
+    print("🤖 Bot is running...")
     bot.infinity_polling()
