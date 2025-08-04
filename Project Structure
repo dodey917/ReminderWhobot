@@ -1,6 +1,0 @@
-reminder-bot/
-├── bot.py                # Main bot code
-├── gdocs_integration.py  # Google Docs integration
-├── requirements.txt      # Dependencies
-├── reminderwhobot-2c10c31bf2ce.json  # Service account credentials
-└── README.md             # Deployment instructions
